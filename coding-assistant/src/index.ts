@@ -344,8 +344,26 @@ async function main(): Promise<void> {
 
     rl.prompt();
 
+    // ── Paste detection ───────────────────────────────────────────────────────
+    // When multiple lines arrive within PASTE_WINDOW_MS of each other, it's a
+    // paste event. Buffer all lines and process them as a single message when
+    // the burst stops. This prevents a pasted multi-line prompt from firing
+    // separate engine.run() calls for each line.
+    const PASTE_WINDOW_MS = 40;
+    let pasteBuffer: string[] = [];
+    let pasteTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushPaste = async () => {
+        pasteTimer = null;
+        const lines = pasteBuffer.splice(0);
+        if (!lines.length) return;
+        const joined = lines.join('\n').trim();
+        if (!joined) { rl.prompt(); return; }
+        await handleInput(joined);
+    };
+
     rl.on('line', async (line) => {
-        // ── Multi-line accumulation ───────────────────────────────────────────
+        // ── Manual multi-line mode (ends with ':' or '```', empty line to send)
         if (multiMode) {
             if (line === '') {
                 const input = flushMulti();
@@ -359,19 +377,26 @@ async function main(): Promise<void> {
             return;
         }
 
-        const raw   = line.trimEnd();
-        const input = raw.trim();
+        // ── Paste detection: buffer lines arriving in quick succession ─────────
+        pasteBuffer.push(line.trimEnd());
+        if (pasteTimer) clearTimeout(pasteTimer);
 
-        // Enter multi-line mode when line ends with ':' or '```'
-        if (input && (raw.endsWith(':') || raw.endsWith('```'))) {
-            multiMode = true;
-            multiBuffer = [raw];
-            rl.setPrompt(col(c.gray, '... '));
-            rl.prompt();
-            return;
-        }
-        if (!input) { rl.prompt(); return; }
-        await handleInput(input);
+        pasteTimer = setTimeout(async () => {
+            const lines = pasteBuffer.splice(0);
+            const joined = lines.join('\n').trim();
+            if (!joined) { rl.prompt(); return; }
+
+            // Single-line: enter manual multi-line mode when it ends with ':' or '```'
+            if (lines.length === 1 && (joined.endsWith(':') || joined.endsWith('```'))) {
+                multiMode = true;
+                multiBuffer = [joined];
+                rl.setPrompt(col(c.gray, '... '));
+                rl.prompt();
+                return;
+            }
+
+            await handleInput(joined);
+        }, PASTE_WINDOW_MS);
     });
 
     rl.on('close', () => process.exit(0));
