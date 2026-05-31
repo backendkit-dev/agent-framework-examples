@@ -1,0 +1,22 @@
+{
+  "name": "@bk/example-coding-assistant",
+  "version": "0.14.0",
+  "private": true,
+  "description": "Interactive coding assistant powered by @bk/agent-coding",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bk/agent-coding": "file:../../agent-framework/packages/coding",
+    "@bk/agent-core": "file:../../agent-framework/packages/core"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.4.0"
+  }
+}

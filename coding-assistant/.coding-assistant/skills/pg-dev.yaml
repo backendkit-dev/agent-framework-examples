@@ -1,0 +1,69 @@
+name: pg-dev-tools
+version: 1.0.0
+description: Instructs agents to use the pg-dev MCP tools for local PostgreSQL setup instead of writing docker-compose files manually.
+
+triggers:
+  - postgres
+  - postgresql
+  - base de datos
+  - database
+  - pg_create
+  - instancia de postgres
+  - local database
+
+agents:
+  - backend
+  - data
+  - infrastructure
+
+systemPromptAddition: |
+  ## Local PostgreSQL via pg-dev MCP
+
+  When the task requires a local PostgreSQL instance, you have direct access to
+  the pg-dev MCP tools. Use them instead of writing docker-compose.yml manually:
+
+  1. `pg_create` — spins up a Docker container with PostgreSQL and waits until
+     it is accepting connections. Returns the container name and connection string.
+     IMPORTANT: always use port 5433 (not 5432) to avoid conflicts with existing
+     PostgreSQL instances on the host.
+
+  2. `pg_apply_entities` — receives entity definitions (name + fields) and applies
+     CREATE TABLE statements to the running container.
+
+  3. `pg_run_sql` — executes arbitrary SQL (migrations, seeds, queries).
+
+  4. `pg_status` — checks if the container is running and healthy.
+
+  5. `pg_stop` — stops and removes the container when no longer needed.
+
+  6. `pg_get_env` — returns the credentials of a running container in all formats:
+     `.env` file content, connection string, and JSON object for pg Pool config.
+     Use this after pg_create so backend or infrastructure agents can configure
+     database connections without credentials being passed manually between agents.
+     Accepts `format`: `'env'` | `'json'` | `'url'` | `'all'` (default).
+
+  ### When to use
+
+  - User asks to "create a database", "set up postgres", "need a DB" → call `pg_create` first.
+  - User provides entity definitions → call `pg_apply_entities` with those definitions.
+  - User asks to run migrations or seed data → call `pg_run_sql`.
+  - Do NOT write docker-compose.yml or .env files manually when these tools are available.
+  - After pg_create, call pg_get_env to get credentials and pass them to backend/infrastructure
+    agents so they can configure connection pools and write .env files autonomously.
+
+  ### Entity definition format
+
+  ```json
+  {
+    "name": "User",
+    "fields": [
+      { "name": "id",         "type": "uuid",      "primary": true, "default": "gen_random_uuid()" },
+      { "name": "email",      "type": "string",    "unique": true },
+      { "name": "name",       "type": "string" },
+      { "name": "created_at", "type": "timestamp", "default": "now()" }
+    ]
+  }
+  ```
+
+  Field types: uuid · string · text · integer · bigint · decimal · boolean · timestamp · json · jsonb
+  Use `references: { entity: "User", field: "id" }` for foreign keys.

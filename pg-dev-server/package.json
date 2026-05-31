@@ -1,0 +1,26 @@
+{
+  "name": "@bk/example-pg-dev-server",
+  "version": "0.14.0",
+  "private": true,
+  "description": "MCP server — spins up PostgreSQL via Docker and applies entity schemas. Assigns tools to local agents (mode='tools').",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/server.ts",
+    "start": "node dist/server.js",
+    "start:http": "node dist/server.js --http",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
