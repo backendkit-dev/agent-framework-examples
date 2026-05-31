@@ -545,7 +545,9 @@ async function main(): Promise<void> {
                         emit(col(c.yellow, `  Server "${name}" not found.`));
                     } else {
                         loader.save({ ...current, mcpServers: servers });
-                        emit(col(c.green, `  Removed "${name}" — restart to disconnect.`));
+                        // Unregister at runtime — no restart needed
+                        engine.unregisterMCPServer(name);
+                        emit(col(c.green, `  Removed "${name}" — tools and command blocks reverted.`));
                     }
                 }
 
