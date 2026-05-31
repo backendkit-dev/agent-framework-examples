@@ -66,12 +66,12 @@ export function entityToSQL(entity: EntityDef): string {
         if (field.references) {
             const refTable = toSnake(field.references.entity);
             const refCol = toSnake(field.references.field);
-            fkLines.push(`  CONSTRAINT fk_${table}_${col} FOREIGN KEY (${col}) REFERENCES ${refTable}(${refCol}) ON DELETE CASCADE`);
+            fkLines.push(`  CONSTRAINT fk_${table}_${col} FOREIGN KEY (${quoteIdent(col)}) REFERENCES ${quoteIdent(refTable)}(${quoteIdent(refCol)}) ON DELETE CASCADE`);
         }
     }
 
     const allLines = [...columnLines, ...fkLines];
-    let sql = `CREATE TABLE IF NOT EXISTS ${table} (\n${allLines.join(',\n')}\n);`;
+    let sql = `CREATE TABLE IF NOT EXISTS ${quoteIdent(table)} (\n${allLines.join(',\n')}\n);`;
 
     if (entity.indexes?.length) {
         sql += '\n';
@@ -79,7 +79,7 @@ export function entityToSQL(entity: EntityDef): string {
             const cols = idx.fields.map(toSnake);
             const idxName = `idx_${table}_${cols.join('_')}`;
             const unique = idx.unique ? 'UNIQUE ' : '';
-            sql += `\nCREATE ${unique}INDEX IF NOT EXISTS ${idxName} ON ${table} (${cols.join(', ')});`;
+            sql += `\nCREATE ${unique}INDEX IF NOT EXISTS ${idxName} ON ${quoteIdent(table)} (${cols.map(quoteIdent).join(', ')});`;
         }
     }
 
@@ -110,4 +110,21 @@ function toSnake(s: string): string {
         .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
         .replace(/([a-z])([A-Z])/g, '$1_$2')
         .toLowerCase();
+}
+
+/**
+ * PostgreSQL reserved words that must be double-quoted when used as identifiers.
+ * Subset covering the most common collision-prone names.
+ */
+const PG_RESERVED = new Set([
+    'user', 'order', 'group', 'table', 'select', 'where', 'from', 'join',
+    'index', 'column', 'constraint', 'default', 'value', 'values', 'all',
+    'check', 'unique', 'primary', 'foreign', 'references', 'cascade',
+    'session', 'role', 'grant', 'revoke', 'trigger', 'rule', 'view',
+    'sequence', 'schema', 'database', 'transaction', 'commit', 'rollback',
+]);
+
+/** Quote an identifier if it collides with a PostgreSQL reserved word. */
+function quoteIdent(name: string): string {
+    return PG_RESERVED.has(name.toLowerCase()) ? `"${name}"` : name;
 }
