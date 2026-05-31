@@ -355,8 +355,9 @@ srv.tool(
 
 const args = process.argv.slice(2);
 const HTTP_MODE = args.includes('--http');
+const portIdx   = args.indexOf('--port');
 const portArg   = args.find(a => a.startsWith('--port='))?.split('=')[1]
-               ?? args[args.indexOf('--port') + 1];
+               ?? (portIdx !== -1 ? args[portIdx + 1] : undefined);
 const HTTP_PORT = parseInt(portArg ?? '3012', 10);
 
 async function main(): Promise<void> {
