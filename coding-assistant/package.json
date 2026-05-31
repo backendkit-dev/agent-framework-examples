@@ -12,10 +12,13 @@
   },
   "dependencies": {
     "@bk/agent-coding": "file:../../agent-framework/packages/coding",
-    "@bk/agent-core": "file:../../agent-framework/packages/core"
+    "@bk/agent-core": "file:../../agent-framework/packages/core",
+    "dotenv": "^17.4.2",
+    "pg": "^8.21.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.41",
+    "@types/pg": "^8.20.0",
     "ts-node": "^10.9.0",
     "typescript": "^5.4.0"
   }

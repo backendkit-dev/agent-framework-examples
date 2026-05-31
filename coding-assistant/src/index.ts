@@ -492,28 +492,31 @@ async function main(): Promise<void> {
                 }
 
             // ── /mcp add <name> <url|command> [flags] ─────────────────────────
-            // flags: --mode tools|agent   --assign backend,data   --stdio
+            // flags: --mode tools|agent   --assign a,b   --blocks cmd1,cmd2   --stdio
             } else if (sub === 'add') {
                 const name = parts[2];
                 const target = parts[3];
                 if (!name || !target) {
-                    emit(col(c.gray, '  Usage: /mcp add <name> <url|command> [--mode tools|agent] [--assign agent1,agent2] [--stdio]'));
+                    emit(col(c.gray, '  Usage: /mcp add <name> <url|command> [--mode tools|agent] [--assign a,b] [--blocks cmd1,cmd2] [--stdio]'));
                     emit(col(c.gray, '  Examples:'));
-                    emit(col(c.gray, '    /mcp add pg-dev http://127.0.0.1:3012/mcp --mode tools --assign backend,data'));
+                    emit(col(c.gray, '    /mcp add pg-dev http://127.0.0.1:3012/mcp --mode tools --assign backend,data --blocks docker,docker-compose'));
                     emit(col(c.gray, '    /mcp add github npx @modelcontextprotocol/server-github --stdio --mode tools --assign backend'));
                 } else {
-                    const isStdio  = parts.includes('--stdio');
-                    const modeIdx  = parts.indexOf('--mode');
-                    const mode     = modeIdx !== -1 ? (parts[modeIdx + 1] as 'tools' | 'agent') : undefined;
+                    const isStdio   = parts.includes('--stdio');
+                    const modeIdx   = parts.indexOf('--mode');
+                    const mode      = modeIdx   !== -1 ? (parts[modeIdx   + 1] as 'tools' | 'agent') : undefined;
                     const assignIdx = parts.indexOf('--assign');
-                    const assignTo = assignIdx !== -1 ? parts[assignIdx + 1]?.split(',') : undefined;
+                    const assignTo  = assignIdx !== -1 ? parts[assignIdx + 1]?.split(',') : undefined;
+                    const blocksIdx = parts.indexOf('--blocks');
+                    const blocksCommands = blocksIdx !== -1 ? parts[blocksIdx + 1]?.split(',') : undefined;
 
                     const cfg: MCPServerConfig = isStdio
-                        ? { name, command: target, args: parts.slice(4).filter(p => !p.startsWith('--') && p !== mode && p !== parts[assignIdx + 1]) }
+                        ? { name, command: target, args: parts.slice(4).filter(p => !p.startsWith('--') && p !== mode && p !== parts[assignIdx + 1] && p !== parts[blocksIdx + 1]) }
                         : { name, url: target };
 
-                    if (mode)     cfg.mode     = mode;
-                    if (assignTo) cfg.assignTo  = assignTo;
+                    if (mode)           cfg.mode           = mode;
+                    if (assignTo)       cfg.assignTo       = assignTo;
+                    if (blocksCommands) cfg.blocksCommands = blocksCommands;
 
                     const current = loader.load();
                     const existing = (current.mcpServers ?? []).findIndex(s => s.name === name);
@@ -527,9 +530,10 @@ async function main(): Promise<void> {
                     }
                     loader.save({ ...current, mcpServers: servers });
 
-                    const modeLabel  = mode ? `  mode: ${mode}` : '';
-                    const assignLabel = assignTo ? `  assign→[${assignTo.join(',')}]` : '';
-                    emit(col(c.gray, `  ${isStdio ? 'stdio' : target}${modeLabel}${assignLabel}`));
+                    const modeLabel   = mode           ? `  mode: ${mode}` : '';
+                    const assignLabel = assignTo        ? `  assign→[${assignTo.join(',')}]` : '';
+                    const blocksLabel = blocksCommands  ? `  blocks→[${blocksCommands.join(',')}]` : '';
+                    emit(col(c.gray, `  ${isStdio ? 'stdio' : target}${modeLabel}${assignLabel}${blocksLabel}`));
                 }
 
             // ── /mcp remove <name> ────────────────────────────────────────────
