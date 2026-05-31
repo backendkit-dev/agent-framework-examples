@@ -321,11 +321,14 @@ async function main(): Promise<void> {
         return full;
     };
 
-    // ── Ctrl+C — abort current run, keep REPL alive ───────────────────────────
-    rl.on('SIGINT', () => {
+    // ── Ctrl+C — abort current run, keep REPL alive ─────────────────────────
+    // Must use process.on('SIGINT') instead of rl.on('SIGINT') because
+    // rl.pause() is called while the engine runs, which stops readline from
+    // processing keyboard events — including its own SIGINT handler.
+    process.on('SIGINT', () => {
         if (running) {
             engine.abort();
-            emit(col(c.yellow, '\n  ⚠ Abortando… (Ctrl+C de nuevo para salir)'));
+            process.stdout.write(col(c.yellow, '\n  ⚠ Abortando… (Ctrl+C de nuevo para salir)\n'));
             running = false;
             multiBuffer = [];
             multiMode = false;
@@ -333,7 +336,7 @@ async function main(): Promise<void> {
             rl.resume();
             rl.prompt();
         } else {
-            emit(col(c.gray, '  bye\n'));
+            process.stdout.write(col(c.gray, '  bye\n'));
             rl.close();
             process.exit(0);
         }
