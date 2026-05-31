@@ -6,9 +6,9 @@
   "scripts": {
     "bootstrap": "node scripts/bootstrap.js",
     "build": "node scripts/build-all.js",
-    "servers": "concurrently --kill-others-on-fail --prefix-colors \"cyan,yellow,magenta\" --names \"git-analyst,code-explainer,pg-dev\" \"node git-analyst/dist/index.js --http --port=3010\" \"node code-explainer/dist/index.js --http --port=3011\" \"node pg-dev-server/dist/server.js --http --port=3012\"",
+    "servers": "concurrently --kill-others-on-fail --prefix-colors \"cyan,yellow,magenta\" --names \"git-analyst,code-explainer,pg-dev\" \"node git-analyst/dist/server.js --http --port=3010\" \"node code-explainer/dist/server.js --http --port=3011\" \"node pg-dev-server/dist/server.js --http --port=3012\"",
     "dev": "cd coding-assistant && npm run dev",
-    "start": "concurrently --kill-others --prefix-colors \"cyan,yellow,magenta,green\" --names \"git-analyst,code-explainer,pg-dev,assistant\" \"node git-analyst/dist/index.js --http --port=3010\" \"node code-explainer/dist/index.js --http --port=3011\" \"node pg-dev-server/dist/server.js --http --port=3012\" \"npm run dev --prefix coding-assistant\""
+    "start": "concurrently --kill-others --prefix-colors \"cyan,yellow,magenta,green\" --names \"git-analyst,code-explainer,pg-dev,assistant\" \"node git-analyst/dist/server.js --http --port=3010\" \"node code-explainer/dist/server.js --http --port=3011\" \"node pg-dev-server/dist/server.js --http --port=3012\" \"npm run dev --prefix coding-assistant\""
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
