@@ -15,6 +15,50 @@ const c = {
 };
 const col = (clr: string, s: string) => `${clr}${s}${c.reset}`;
 
+// ── ProgressBar ───────────────────────────────────────────────────────────────
+// Horizontal fill bar — safe with readline (uses \r, no cursor hide).
+// Simulates progress over an estimated duration since we can't measure LLM calls.
+const BAR_WIDTH       = 28;
+const BAR_FILL        = '█';
+const BAR_EMPTY       = '░';
+const BAR_STEP_MS     = 120;   // ms per fill step
+const BAR_TOTAL_MS    = 6_000; // estimated LLM call duration
+
+class ProgressBar {
+    private timer: ReturnType<typeof setInterval> | null = null;
+    private filled = 0;
+    private label  = '';
+
+    start(label: string): void {
+        this.stop();
+        this.filled = 0;
+        this.label  = label;
+        const maxSteps  = BAR_WIDTH - 2;            // leave last 2 for done
+        const stepMs    = BAR_TOTAL_MS / maxSteps;
+        this.timer = setInterval(() => {
+            if (this.filled < maxSteps) this.filled++;
+            this.render();
+        }, stepMs);
+        this.render();
+    }
+
+    private render(): void {
+        const bar = BAR_FILL.repeat(this.filled) + BAR_EMPTY.repeat(BAR_WIDTH - this.filled);
+        process.stdout.write(`\r  [${bar}] ${col(c.gray, this.label)}`);
+    }
+
+    stop(success = true): void {
+        if (!this.timer) return;
+        clearInterval(this.timer);
+        this.timer = null;
+        const bar  = success ? BAR_FILL.repeat(BAR_WIDTH) : BAR_EMPTY.repeat(BAR_WIDTH);
+        const icon = success ? col(c.green, '✓') : col(c.red, '✗');
+        process.stdout.write(`\r  [${bar}] ${icon} ${col(c.gray, this.label)}\n`);
+    }
+}
+
+const progressBar = new ProgressBar();
+
 // ── InlineSpinner ─────────────────────────────────────────────────────────────
 // Uses \r to overwrite the current line — no cursor manipulation, safe with readline.
 // Rule: always call stop() before any console.log / process.stdout.write(\n).
@@ -202,6 +246,15 @@ export function renderEvent(event: AgentEvent, orchestratorId = 'general'): void
 
         case 'thinking':
             print(`  ${col(c.gray, `… ${event.label}`)}`);
+            break;
+
+        case 'compacting':
+            if (event.phase === 'start') {
+                flushStream();
+                progressBar.start(event.label);
+            } else {
+                progressBar.stop(event.phase === 'done');
+            }
             break;
 
         // ── Workflow events ───────────────────────────────────────────────────
