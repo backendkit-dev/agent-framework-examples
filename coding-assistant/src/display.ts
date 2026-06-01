@@ -11,6 +11,7 @@ const c = {
     red:     '\x1b[31m',
     magenta: '\x1b[35m',
     gray:    '\x1b[90m',
+    white:   '\x1b[97m',
 };
 const col = (clr: string, s: string) => `${clr}${s}${c.reset}`;
 
@@ -22,6 +23,12 @@ let runInput       = 0;
 let runOutput      = 0;
 let runCost        = 0;
 
+// Orchestrator routing suppression
+let orchestratorMode  = false;   // true while general is thinking before delegating
+let orchHeader        = '';      // buffered block_start header line
+let orchTokenBuffer   = '';      // buffered tokens (shown only if general responds directly)
+let didDelegate       = false;   // true if agent_switch fired in this block
+
 function flushStream(): void {
     if (streamBuffer) {
         process.stdout.write('\n');
@@ -31,7 +38,7 @@ function flushStream(): void {
 }
 
 // ── Event renderer ────────────────────────────────────────────────────────────
-export function renderEvent(event: AgentEvent): void {
+export function renderEvent(event: AgentEvent, orchestratorId = 'general'): void {
     switch (event.type) {
 
         case 'ready':
@@ -41,28 +48,58 @@ export function renderEvent(event: AgentEvent): void {
         case 'block_start':
             flushStream();
             blockStart = Date.now();
-            console.log(`\n${col(c.bold + c.cyan, `  ${event.agent_icon ?? '◆'}  ${event.agent_name ?? event.agent_id}`)}`);
-            console.log(col(c.gray, '  ' + '─'.repeat(50)));
+
+            if (event.agent_id === orchestratorId) {
+                // Buffer header — show only if general responds directly (no delegation)
+                orchestratorMode = true;
+                didDelegate      = false;
+                orchTokenBuffer  = '';
+                orchHeader       =
+                    `\n${col(c.bold + c.cyan, `  ${event.agent_icon ?? '◆'}  ${event.agent_name ?? event.agent_id}`)}` +
+                    `\n${col(c.gray, '  ' + '─'.repeat(50))}`;
+            } else {
+                orchestratorMode = false;
+                console.log(`\n${col(c.bold + c.cyan, `  ${event.agent_icon ?? '◆'}  ${event.agent_name ?? event.agent_id}`)}`);
+                console.log(col(c.gray, '  ' + '─'.repeat(50)));
+            }
             break;
 
         case 'block_end': {
             flushStream();
             const elapsed = blockStart ? ` ${((Date.now() - blockStart) / 1000).toFixed(1)}s` : '';
+
+            if (orchestratorMode && !didDelegate) {
+                // General responded directly — show its buffered header + tokens
+                console.log(orchHeader);
+                if (orchTokenBuffer.trim()) {
+                    process.stdout.write('  ' + orchTokenBuffer + '\n');
+                }
+            }
+
+            orchestratorMode = false;
+            didDelegate      = false;
+            orchTokenBuffer  = '';
+
             console.log(col(c.gray, '  ' + '─'.repeat(50) + elapsed));
             break;
         }
 
         case 'token':
-            if (!isStreaming) {
-                process.stdout.write('  ');
-                isStreaming = true;
+            if (orchestratorMode) {
+                orchTokenBuffer += event.content;  // buffer silently
+            } else {
+                if (!isStreaming) {
+                    process.stdout.write('  ');
+                    isStreaming = true;
+                }
+                streamBuffer += event.content;
+                process.stdout.write(event.content);
             }
-            streamBuffer += event.content;
-            process.stdout.write(event.content);
             break;
 
         case 'tool_call':
             flushStream();
+            if (event.name === 'ask_agent') break;  // agent_switch will handle it
             console.log(
                 `  ${col(c.yellow, '◌')} ${col(c.dim, event.name)}` +
                 (event.args_preview ? col(c.gray, `  ${event.args_preview.slice(0, 64)}`) : ''),
@@ -70,11 +107,23 @@ export function renderEvent(event: AgentEvent): void {
             break;
 
         case 'tool_result':
+            if (event.name === 'ask_agent') break;  // sub-agent output shown via its own block
             console.log(
                 `  ${event.success ? col(c.green, '◈') : col(c.red, '✗')} ${col(c.dim, event.name)}` +
                 (event.preview ? col(c.gray, `  ${event.preview.slice(0, 80)}`) : ''),
             );
             break;
+
+        case 'agent_switch': {
+            flushStream();
+            didDelegate = true;
+            const arrow   = col(c.gray, '→');
+            const srcIcon = col(c.dim, '◆');
+            const tgtIcon = col(c.cyan, event.to_icon ?? '◆');
+            const tgtName = col(c.white, event.to_name ?? event.to);
+            console.log(`\n  ${srcIcon} ${col(c.dim, orchestratorId)}  ${arrow}  ${tgtIcon} ${tgtName}`);
+            break;
+        }
 
         case 'metrics':
             runInput  += event.input_tokens;
@@ -126,7 +175,7 @@ export function renderEvent(event: AgentEvent): void {
 
         case 'workflow_approval_required':
             flushStream();
-            console.log(`\n  ${col(c.yellow, '⏸')} ${col(c.bold, `approval required: ${event.step}`)}\n`);
+            console.log(`\n  ${col(c.yellow, '⏸')} ${col(c.bold, `approval required: ${event.step}`)}`);
             break;
 
         case 'workflow_complete':
