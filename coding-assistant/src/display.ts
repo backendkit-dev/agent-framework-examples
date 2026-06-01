@@ -1,4 +1,5 @@
 import type { AgentEvent } from '@bk/agent-core';
+import { AnimationManager, AnimationType, Presets } from '@backendkit-labs/console-animations';
 
 // ── ANSI ──────────────────────────────────────────────────────────────────────
 const c = {
@@ -15,6 +16,19 @@ const c = {
 };
 const col = (clr: string, s: string) => `${clr}${s}${c.reset}`;
 
+const mgr = new AnimationManager();
+
+// ── Animation helpers ─────────────────────────────────────────────────────────
+function toolAnimation(name: string) {
+    if (name.startsWith('mcp__')) {
+        return mgr.start({ type: AnimationType.DOTS,  text: name, color: 'cyan'  });
+    }
+    if (name === 'run_command') {
+        return mgr.start(Presets.stream(name));
+    }
+    return mgr.start({ type: AnimationType.DOTS, text: name, color: 'gray' });
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let isStreaming    = false;
 let streamBuffer   = '';
@@ -24,10 +38,14 @@ let runOutput      = 0;
 let runCost        = 0;
 
 // Orchestrator routing suppression
-let orchestratorMode  = false;   // true while general is thinking before delegating
-let orchHeader        = '';      // buffered block_start header line
-let orchTokenBuffer   = '';      // buffered tokens (shown only if general responds directly)
-let didDelegate       = false;   // true if agent_switch fired in this block
+let orchestratorMode = false;
+let orchHeader       = '';
+let orchTokenBuffer  = '';
+let didDelegate      = false;
+let thinkingAnimId: string | null = null;
+
+// Active tool animation (most recent tool_call waiting for its tool_result)
+let activeToolAnimId: string | null = null;
 
 function flushStream(): void {
     if (streamBuffer) {
@@ -35,6 +53,13 @@ function flushStream(): void {
         streamBuffer = '';
     }
     isStreaming = false;
+}
+
+function stopThinking() {
+    if (thinkingAnimId) {
+        mgr.stop(thinkingAnimId);
+        thinkingAnimId = null;
+    }
 }
 
 // ── Event renderer ────────────────────────────────────────────────────────────
@@ -50,13 +75,19 @@ export function renderEvent(event: AgentEvent, orchestratorId = 'general'): void
             blockStart = Date.now();
 
             if (event.agent_id === orchestratorId) {
-                // Buffer header — show only if general responds directly (no delegation)
                 orchestratorMode = true;
                 didDelegate      = false;
                 orchTokenBuffer  = '';
                 orchHeader       =
                     `\n${col(c.bold + c.cyan, `  ${event.agent_icon ?? '◆'}  ${event.agent_name ?? event.agent_id}`)}` +
                     `\n${col(c.gray, '  ' + '─'.repeat(50))}`;
+
+                // Pulse while the orchestrator decides what to do
+                thinkingAnimId = mgr.start({
+                    type:  AnimationType.PULSE,
+                    text:  'thinking',
+                    color: 'gray',
+                }).id;
             } else {
                 orchestratorMode = false;
                 console.log(`\n${col(c.bold + c.cyan, `  ${event.agent_icon ?? '◆'}  ${event.agent_name ?? event.agent_id}`)}`);
@@ -66,10 +97,10 @@ export function renderEvent(event: AgentEvent, orchestratorId = 'general'): void
 
         case 'block_end': {
             flushStream();
+            stopThinking();
             const elapsed = blockStart ? ` ${((Date.now() - blockStart) / 1000).toFixed(1)}s` : '';
 
             if (orchestratorMode && !didDelegate) {
-                // General responded directly — show its buffered header + tokens
                 console.log(orchHeader);
                 if (orchTokenBuffer.trim()) {
                     process.stdout.write('  ' + orchTokenBuffer + '\n');
@@ -86,7 +117,7 @@ export function renderEvent(event: AgentEvent, orchestratorId = 'general'): void
 
         case 'token':
             if (orchestratorMode) {
-                orchTokenBuffer += event.content;  // buffer silently
+                orchTokenBuffer += event.content;
             } else {
                 if (!isStreaming) {
                     process.stdout.write('  ');
@@ -99,29 +130,41 @@ export function renderEvent(event: AgentEvent, orchestratorId = 'general'): void
 
         case 'tool_call':
             flushStream();
-            if (event.name === 'ask_agent') break;  // agent_switch will handle it
-            console.log(
-                `  ${col(c.yellow, '◌')} ${col(c.dim, event.name)}` +
-                (event.args_preview ? col(c.gray, `  ${event.args_preview.slice(0, 64)}`) : ''),
-            );
+            if (event.name === 'ask_agent') break;
+            stopThinking();
+            activeToolAnimId = toolAnimation(event.name).id;
             break;
 
         case 'tool_result':
-            if (event.name === 'ask_agent') break;  // sub-agent output shown via its own block
-            console.log(
-                `  ${event.success ? col(c.green, '◈') : col(c.red, '✗')} ${col(c.dim, event.name)}` +
-                (event.preview ? col(c.gray, `  ${event.preview.slice(0, 80)}`) : ''),
-            );
+            if (event.name === 'ask_agent') break;
+            if (activeToolAnimId) {
+                event.success
+                    ? mgr.succeed(activeToolAnimId, event.preview?.slice(0, 80) ?? event.name)
+                    : mgr.fail(activeToolAnimId,    event.preview?.slice(0, 80) ?? event.name);
+                activeToolAnimId = null;
+            }
             break;
 
         case 'agent_switch': {
             flushStream();
+            stopThinking();
             didDelegate = true;
-            const arrow   = col(c.gray, '→');
-            const srcIcon = col(c.dim, '◆');
-            const tgtIcon = col(c.cyan, event.to_icon ?? '◆');
-            const tgtName = col(c.white, event.to_name ?? event.to);
-            console.log(`\n  ${srcIcon} ${col(c.dim, orchestratorId)}  ${arrow}  ${tgtIcon} ${tgtName}`);
+
+            // Brief worm animation to convey routing movement
+            const worm = mgr.start({
+                type:  AnimationType.WORM,
+                text:  `${orchestratorId} → ${event.to_name ?? event.to}`,
+                color: 'cyan',
+                speed: 60,
+            });
+            setTimeout(() => {
+                mgr.stop(worm.id);
+                const arrow   = col(c.gray, '→');
+                const srcIcon = col(c.dim, '◆');
+                const tgtIcon = col(c.cyan, event.to_icon ?? '◆');
+                const tgtName = col(c.white, event.to_name ?? event.to);
+                console.log(`\n  ${srcIcon} ${col(c.dim, orchestratorId)}  ${arrow}  ${tgtIcon} ${tgtName}`);
+            }, 600);
             break;
         }
 
@@ -133,6 +176,7 @@ export function renderEvent(event: AgentEvent, orchestratorId = 'general'): void
 
         case 'done':
             flushStream();
+            stopThinking();
             if (runInput + runOutput > 0) {
                 const costStr = runCost > 0 ? `  $${runCost.toFixed(4)}` : '';
                 console.log(col(c.gray, `  ↑${runInput.toLocaleString()} ↓${runOutput.toLocaleString()} tokens${costStr}`));
@@ -142,6 +186,7 @@ export function renderEvent(event: AgentEvent, orchestratorId = 'general'): void
 
         case 'error':
             flushStream();
+            stopThinking();
             console.log(`\n  ${col(c.red, '✗')} ${event.message}\n`);
             break;
 
