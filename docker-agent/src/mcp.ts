@@ -17,9 +17,31 @@ function runWithEngine(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
     let output = '';
     const transport = new CallbackTransport((event) => {
-      if (event.type === 'token') output += event.content;
-      if (event.type === 'done') resolve(output.trim() || '(no output)');
-      if (event.type === 'error') reject(new Error(event.message));
+      switch (event.type) {
+        case 'token':
+          output += event.content;
+          break;
+        case 'block_start':
+          if (event.agent_name)
+            process.stderr.write(`  ${event.agent_icon ?? '◎'} ${event.agent_name}\n`);
+          break;
+        case 'tool_call':
+          process.stderr.write(`    ⚡ ${event.name}\n`);
+          break;
+        case 'tool_result':
+          process.stderr.write(`      → ${event.success ? 'ok' : 'error'}\n`);
+          break;
+        case 'system':
+          process.stderr.write(`  [${(event as {level?:string}).level ?? 'info'}] ${(event as {text?:string}).text ?? ''}\n`);
+          break;
+        case 'error':
+          process.stderr.write(`  ✗ ${event.message}\n`);
+          reject(new Error(event.message));
+          break;
+        case 'done':
+          resolve(output.trim() || '(no output)');
+          break;
+      }
     });
     const engine = createInfraEngine(transport);
     engine.run(prompt).catch(reject);
