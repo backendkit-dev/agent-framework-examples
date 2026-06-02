@@ -286,6 +286,34 @@ export const containerLogs: ToolDefinition = {
   },
 };
 
+export const containerList: ToolDefinition = {
+  name: 'container_list',
+  description: 'List Docker containers (running by default, or all)',
+  parameters: {
+    type: 'object',
+    properties: {
+      all: { type: 'boolean', description: 'Include stopped containers (default: false)' },
+      filter: { type: 'string', description: 'Filter by name or image' },
+    },
+  },
+  async execute(args: unknown, _ctx: ExecutionContext): Promise<string> {
+    const { all, filter } = (args ?? {}) as { all?: boolean; filter?: string };
+    const docker = getClient();
+    const filters: Record<string, string[]> = {};
+    if (filter) filters.name = [filter];
+    const containers = await docker.listContainers({
+      all: all ?? false,
+      filters: Object.keys(filters).length ? filters : undefined,
+    });
+    if (containers.length === 0) return all ? 'No containers found' : 'No running containers';
+    return containers.map(c => {
+      const name = c.Names[0]?.replace(/^\//, '') ?? c.Id.slice(0, 12);
+      const ports = c.Ports.map(p => p.PublicPort ? `${p.PublicPort}:${p.PrivatePort}` : `${p.PrivatePort}`).join(', ');
+      return `${name.padEnd(25)} ${c.Image.padEnd(30)} ${c.Status.padEnd(20)} ${ports}`;
+    }).join('\n');
+  },
+};
+
 export const containerInspect: ToolDefinition = {
   name: 'container_inspect',
   description: 'Inspect a container (detailed info)',

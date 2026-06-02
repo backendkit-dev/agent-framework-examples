@@ -19,7 +19,7 @@ import { K8S_AGENT_PROFILE } from './agents/k8s-agent';
 import { SYSTEM_AGENT_PROFILE } from './agents/system-agent';
 
 // Docker tools
-import { containerCreate, containerExec, containerStop, containerRemove, containerLogs, containerInspect } from './tools/container';
+import { containerCreate, containerExec, containerStop, containerRemove, containerLogs, containerInspect, containerList } from './tools/container';
 import { systemInfo, systemPrune } from './tools/system';
 import { imagePull, imageBuild, imageList, imageRemove } from './tools/image';
 import { networkCreate, networkList, networkInspect, networkRemove, networkConnect } from './tools/network';
@@ -49,8 +49,8 @@ export function createInfraEngine(transport: CallbackTransport): AgentEngine {
   const toolRegistry = new ToolRegistry();
   toolRegistry
     // Container
-    .register(containerCreate).register(containerExec).register(containerStop)
-    .register(containerRemove).register(containerLogs).register(containerInspect)
+    .register(containerList).register(containerCreate).register(containerExec)
+    .register(containerStop).register(containerRemove).register(containerLogs).register(containerInspect)
     // System
     .register(systemInfo).register(systemPrune)
     // Image
