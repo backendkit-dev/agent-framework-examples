@@ -201,7 +201,7 @@ export async function runInteractive(ctx: InteractiveCtx): Promise<void> {
         let sessionContent = '';
         try { sessionContent = readFileSync(join(projectDir, 'memory', 'session.md'), 'utf-8'); } catch {}
         const agents = AgentLoader.load({ appName, cwd: currentCwd, builtins: CODING_AGENTS })
-            .map(a => ({ id: a.id, name: a.name, description: a.description ?? '' }));
+            .map(a => ({ id: a.id, name: a.name, icon: a.icon, description: a.description ?? '' }));
         const provider = config.defaultProvider!;
         const model    = ctx.model ?? config.providers?.[provider]?.model ?? DEFAULT_MODELS[provider] ?? provider;
 
