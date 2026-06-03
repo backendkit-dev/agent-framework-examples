@@ -90,3 +90,31 @@ export const imageRemove = defineTool({
   },
 });
 
+export const imageTag = defineTool({
+  name: 'image_tag',
+  description: 'Tag a Docker image with a new name (e.g. to prepare for push to a registry)',
+  input: z.object({
+    source: z.string().describe('Source image name or ID (e.g. myapp:latest)'),
+    target: z.string().describe('Target tag including registry (e.g. registry.io/myapp:v1.2.3)'),
+  }),
+  async execute({ source, target }) {
+    await execDocker(['tag', source, target]);
+    return `Tagged ${source} → ${target}`;
+  },
+});
+
+export const imagePush = defineTool({
+  name: 'image_push',
+  description: 'Push a Docker image to a registry',
+  input: z.object({
+    image: z.string().describe('Image name including registry and tag (e.g. registry.io/myapp:v1.2.3)'),
+    platform: z.string().optional().describe('Target platform (e.g. linux/amd64)'),
+  }),
+  async execute({ image, platform }) {
+    const args = ['push', image];
+    if (platform) args.push('--platform', platform);
+    await execDocker(args, 300_000);
+    return `Pushed: ${image}`;
+  },
+});
+

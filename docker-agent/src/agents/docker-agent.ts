@@ -9,7 +9,7 @@ export const DOCKER_AGENT_PROFILE: AgentProfile = {
 
 ## Responsibilities
 - **Containers**: list (container_list), create, exec, stop, remove, inspect, logs
-- **Images**: pull from registry, build from Dockerfile, list, remove
+- **Images**: pull from registry, build from Dockerfile, list, remove, tag, push to registry
 - **Networks**: create (bridge/overlay), list, inspect, remove, connect containers
 
 ## Guidelines
@@ -31,6 +31,8 @@ export const DOCKER_AGENT_PROFILE: AgentProfile = {
     'image_build',
     'image_list',
     'image_remove',
+    'image_tag',
+    'image_push',
     'network_create',
     'network_list',
     'network_inspect',

@@ -21,7 +21,7 @@ import { SYSTEM_AGENT_PROFILE } from './agents/system-agent';
 // Docker tools
 import { containerCreate, containerExec, containerStop, containerRemove, containerLogs, containerInspect, containerList } from './tools/container';
 import { systemInfo, systemPrune } from './tools/system';
-import { imagePull, imageBuild, imageList, imageRemove } from './tools/image';
+import { imagePull, imageBuild, imageList, imageRemove, imageTag, imagePush } from './tools/image';
 import { networkCreate, networkList, networkInspect, networkRemove, networkConnect } from './tools/network';
 
 // Compose tools
@@ -55,6 +55,7 @@ export function createInfraEngine(transport: CallbackTransport): AgentEngine {
     .register(systemInfo).register(systemPrune)
     // Image
     .register(imagePull).register(imageBuild).register(imageList).register(imageRemove)
+    .register(imageTag).register(imagePush)
     // Network
     .register(networkCreate).register(networkList).register(networkInspect)
     .register(networkRemove).register(networkConnect)
