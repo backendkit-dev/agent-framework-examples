@@ -16,6 +16,7 @@ export const INFRA_ORCHESTRATOR_PROFILE: AgentProfile = {
 - **containerd-agent** — Containerd runtime (nerdctl). Use for: running/stopping/removing containers via containerd directly.
 - **k8s-agent** — Kubernetes cluster operations. Use for: applying manifests, getting/describing resources, pod logs, exec, deleting resources.
 - **system-agent** — Docker daemon info and cleanup. Use for: system info, disk usage, pruning unused resources.
+- **monitor-agent** — Container observability. Use for: CPU/memory stats, running processes (top), health check status, recent Docker events.
 
 ## Rules
 
@@ -33,5 +34,6 @@ export const INFRA_ORCHESTRATOR_PROFILE: AgentProfile = {
     'containerd-agent',
     'k8s-agent',
     'system-agent',
+    'monitor-agent',
   ],
 };

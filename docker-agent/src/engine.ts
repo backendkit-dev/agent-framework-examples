@@ -17,6 +17,7 @@ import { VOLUME_AGENT_PROFILE } from './agents/volume-agent';
 import { CONTAINERD_AGENT_PROFILE } from './agents/containerd-agent';
 import { K8S_AGENT_PROFILE } from './agents/k8s-agent';
 import { SYSTEM_AGENT_PROFILE } from './agents/system-agent';
+import { MONITOR_AGENT_PROFILE } from './agents/monitor-agent';
 
 // Docker tools
 import { containerCreate, containerExec, containerStop, containerRemove, containerLogs, containerInspect, containerList } from './tools/container';
@@ -42,6 +43,9 @@ import { containerdRun, containerdList, containerdStop, containerdRemove, contai
 
 // K8s tools
 import { k8sApply, k8sGet, k8sDescribe, k8sLogs, k8sExec, k8sDelete } from './tools/k8s';
+
+// Monitor tools
+import { containerStats, containerTop, containerHealth, eventsTail } from './tools/monitor';
 
 export function createInfraEngine(transport: CallbackTransport): AgentEngine {
   const config = loadConfig();
@@ -74,7 +78,9 @@ export function createInfraEngine(transport: CallbackTransport): AgentEngine {
     .register(containerdRemove).register(containerdLogs).register(containerdPull)
     // K8s
     .register(k8sApply).register(k8sGet).register(k8sDescribe)
-    .register(k8sLogs).register(k8sExec).register(k8sDelete);
+    .register(k8sLogs).register(k8sExec).register(k8sDelete)
+    // Monitor
+    .register(containerStats).register(containerTop).register(containerHealth).register(eventsTail);
 
   const agentRegistry = new AgentRegistry();
   agentRegistry
@@ -85,7 +91,8 @@ export function createInfraEngine(transport: CallbackTransport): AgentEngine {
     .register(VOLUME_AGENT_PROFILE)
     .register(CONTAINERD_AGENT_PROFILE)
     .register(K8S_AGENT_PROFILE)
-    .register(SYSTEM_AGENT_PROFILE);
+    .register(SYSTEM_AGENT_PROFILE)
+    .register(MONITOR_AGENT_PROFILE);
 
   const providerRegistry = new ProviderRegistry();
   providerRegistry.register(
