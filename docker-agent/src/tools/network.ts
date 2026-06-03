@@ -1,5 +1,17 @@
-﻿import { defineTool, z } from './define-tool';
+﻿import { execFile } from 'child_process';
+import { defineTool, z } from './define-tool';
 import { getClient } from '../docker/client';
+import { loadConfig } from '../config';
+
+function execDocker(args: string[], timeoutMs?: number): Promise<string> {
+  const timeout = timeoutMs ?? loadConfig().defaultTimeout;
+  return new Promise((resolve, reject) => {
+    execFile('docker', args, { timeout, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) { reject(new Error(stderr.trim() || err.message)); return; }
+      resolve(stdout.trim());
+    });
+  });
+}
 
 export const networkCreate = defineTool({
   name: 'network_create',
@@ -98,6 +110,106 @@ export const networkConnect = defineTool({
     if (alias) opts.EndpointConfig = { Aliases: [alias] };
     await net.connect(opts as Parameters<typeof net.connect>[0]);
     return `Connected container "${container}" to network "${network}"`;
+  },
+});
+
+export const networkDisconnect = defineTool({
+  name: 'network_disconnect',
+  description: 'Disconnect a container from a Docker network',
+  input: z.object({
+    network: z.string().describe('Network name or ID'),
+    container: z.string().describe('Container name or ID'),
+    force: z.boolean().optional().describe('Force disconnection even if the container is running'),
+  }),
+  async execute({ network, container, force }) {
+    const docker = getClient();
+    const net = docker.getNetwork(network);
+    await net.disconnect({ Container: container, Force: force ?? false } as Parameters<typeof net.disconnect>[0]);
+    return `Disconnected container "${container}" from network "${network}"`;
+  },
+});
+
+export const networkPrune = defineTool({
+  name: 'network_prune',
+  description: 'Remove all unused Docker networks (not referenced by any container)',
+  input: z.object({
+    filter: z.string().optional().describe('Filter by label (e.g. "env=staging")'),
+  }),
+  async execute({ filter }) {
+    const args = ['network', 'prune', '-f'];
+    if (filter) args.push('--filter', `label=${filter}`);
+    const out = await execDocker(args);
+    return out || 'No unused networks to remove';
+  },
+});
+
+export const networkDiagnose = defineTool({
+  name: 'network_diagnose',
+  description: 'Test network connectivity from inside a container to a target host or URL',
+  input: z.object({
+    fromContainer: z.string().describe('Source container name or ID'),
+    target: z.string().describe('Target hostname, IP, or URL'),
+    method: z.enum(['ping', 'curl', 'nc']).optional().describe('Test method (default: ping)'),
+    port: z.number().optional().describe('Port to check — required for nc, optional for curl'),
+    count: z.number().optional().describe('Number of ping packets (default: 3)'),
+  }),
+  async execute({ fromContainer, target, method = 'ping', port, count = 3 }) {
+    let cmd: string[];
+
+    switch (method) {
+      case 'curl': {
+        const url = target.startsWith('http') ? target : `http://${target}${port ? `:${port}` : ''}`;
+        cmd = ['exec', fromContainer, 'curl', '-s', '-o', '/dev/null', '-w', '%{http_code} %{time_total}s', '--connect-timeout', '5', url];
+        break;
+      }
+      case 'nc': {
+        if (!port) return 'Error: port is required for the nc method';
+        cmd = ['exec', fromContainer, 'nc', '-zv', '-w', '3', target, String(port)];
+        break;
+      }
+      default: {
+        cmd = ['exec', fromContainer, 'ping', '-c', String(count), '-W', '2', target];
+      }
+    }
+
+    const out = await execDocker(cmd, 20_000);
+    return out;
+  },
+});
+
+export const networkDnsLookup = defineTool({
+  name: 'network_dns_lookup',
+  description: 'Resolve a hostname from inside a container to verify DNS and service discovery',
+  input: z.object({
+    container: z.string().describe('Container to run the lookup from'),
+    hostname: z.string().describe('Hostname or Docker service name to resolve'),
+  }),
+  async execute({ container, hostname }) {
+    // Try nslookup first, fall back to getent, then show resolv.conf for context
+    const attempts: Array<{ tool: string; args: string[] }> = [
+      { tool: 'nslookup', args: ['exec', container, 'nslookup', hostname] },
+      { tool: 'getent',   args: ['exec', container, 'getent', 'hosts', hostname] },
+    ];
+
+    for (const attempt of attempts) {
+      try {
+        const out = await execDocker(attempt.args, 10_000);
+        return JSON.stringify({ tool: attempt.tool, hostname, result: out });
+      } catch {
+        // try next
+      }
+    }
+
+    // Both failed — return DNS config for debugging
+    try {
+      const resolvConf = await execDocker(['exec', container, 'cat', '/etc/resolv.conf'], 5_000);
+      return JSON.stringify({
+        error: `Could not resolve "${hostname}" — neither nslookup nor getent are available in this container`,
+        dnsConfig: resolvConf,
+      });
+    } catch {
+      return `Could not resolve "${hostname}" and failed to read DNS config from container "${container}"`;
+    }
   },
 });
 

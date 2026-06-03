@@ -21,12 +21,16 @@ import { MONITOR_AGENT_PROFILE } from './agents/monitor-agent';
 import { REGISTRY_AGENT_PROFILE } from './agents/registry-agent';
 import { SECRET_AGENT_PROFILE } from './agents/secret-agent';
 import { BUILD_AGENT_PROFILE } from './agents/build-agent';
+import { NETWORK_AGENT_PROFILE } from './agents/network-agent';
 
 // Docker tools
 import { containerCreate, containerExec, containerStop, containerRemove, containerLogs, containerInspect, containerList } from './tools/container';
 import { systemInfo, systemPrune } from './tools/system';
 import { imagePull, imageBuild, imageList, imageRemove, imageTag, imagePush } from './tools/image';
-import { networkCreate, networkList, networkInspect, networkRemove, networkConnect } from './tools/network';
+import {
+  networkCreate, networkList, networkInspect, networkRemove, networkConnect,
+  networkDisconnect, networkPrune, networkDiagnose, networkDnsLookup,
+} from './tools/network';
 
 // Compose tools
 import { composeTool } from './tools/compose-tool';
@@ -78,6 +82,8 @@ export function createInfraEngine(transport: CallbackTransport): AgentEngine {
     // Network
     .register(networkCreate).register(networkList).register(networkInspect)
     .register(networkRemove).register(networkConnect)
+    .register(networkDisconnect).register(networkPrune)
+    .register(networkDiagnose).register(networkDnsLookup)
     // Compose (wrapped tools)
     .register(composeTool.up).register(composeTool.down).register(composeTool.build)
     .register(composeTool.ps).register(composeTool.logs)
@@ -117,7 +123,8 @@ export function createInfraEngine(transport: CallbackTransport): AgentEngine {
     .register(MONITOR_AGENT_PROFILE)
     .register(REGISTRY_AGENT_PROFILE)
     .register(SECRET_AGENT_PROFILE)
-    .register(BUILD_AGENT_PROFILE);
+    .register(BUILD_AGENT_PROFILE)
+    .register(NETWORK_AGENT_PROFILE);
 
   const providerRegistry = new ProviderRegistry();
   providerRegistry.register(

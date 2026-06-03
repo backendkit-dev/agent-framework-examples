@@ -20,6 +20,7 @@ export const INFRA_ORCHESTRATOR_PROFILE: AgentProfile = {
 - **registry-agent** — Image registry operations. Use for: searching Docker Hub, listing image tags, authenticating with registries, tagging and pushing images.
 - **secret-agent** — Secrets lifecycle management. Use for: Docker Swarm secret create/list/remove, HashiCorp Vault KV read/write/delete.
 - **build-agent** — Application builds and Docker image packaging. Use for: compiling Node.js/Python/Go apps, building Docker images, tagging and pushing to a registry.
+- **network-agent** — Advanced Docker networking. Use for: creating overlay/macvlan networks, connect/disconnect containers, diagnosing connectivity between containers, DNS/service-discovery troubleshooting.
 
 ## Rules
 
@@ -41,5 +42,6 @@ export const INFRA_ORCHESTRATOR_PROFILE: AgentProfile = {
     'registry-agent',
     'secret-agent',
     'build-agent',
+    'network-agent',
   ],
 };
