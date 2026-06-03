@@ -1,0 +1,27 @@
+{
+  "name": "@bk/example-bk-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "bk-agent CLI — interactive + headless (JSON-Lines) mode powered by @bk/agent-coding",
+  "main": "dist/index.js",
+  "bin": {
+    "bk-agent": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "dev:headless": "tsx src/index.ts --headless",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bk/agent-coding": "file:../../agent-framework/packages/coding",
+    "@bk/agent-core": "file:../../agent-framework/packages/core",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}
