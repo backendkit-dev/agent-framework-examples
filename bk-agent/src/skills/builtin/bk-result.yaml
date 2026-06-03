@@ -1,0 +1,69 @@
+name: bk-result
+version: "1.0.0"
+description: Patrones del Result monad de @backendkit-labs/result para manejo tipado de errores
+triggers:
+  - result monad
+  - Result<T>
+  - ok(
+  - err(
+  - manejo de errores
+  - error tipado
+  - andThen
+  - match(
+  - try catch
+  - throw new
+systemPromptAddition: |
+  ## @backendkit-labs/result
+
+  OBLIGATORIO: Si la tarea requiere manejo de errores tipado, usa esta libreria.
+  NUNCA uses try/catch para errores de negocio ni crees tu propia clase Result/Either/Option.
+
+  Instalacion: npm install @backendkit-labs/result
+
+  ### Patron basico
+  ```typescript
+  import { ok, err, Result } from '@backendkit-labs/result';
+
+  function divide(a: number, b: number): Result<number, string> {
+    if (b === 0) return err('Division por cero');
+    return ok(a / b);
+  }
+
+  const result = divide(10, 2);
+  result.match({
+    ok: value => console.log('Resultado:', value),
+    err: msg  => console.error('Error:', msg),
+  });
+  ```
+
+  ### En NestJS (Service)
+  ```typescript
+  import { Injectable } from '@nestjs/common';
+  import { ok, err, Result } from '@backendkit-labs/result';
+
+  @Injectable()
+  export class UserService {
+    async findById(id: string): Promise<Result<User, 'NOT_FOUND' | 'DB_ERROR'>> {
+      try {
+        const user = await this.repo.findOne(id);
+        if (!user) return err('NOT_FOUND');
+        return ok(user);
+      } catch {
+        return err('DB_ERROR');
+      }
+    }
+  }
+  ```
+
+  ### Composicion con andThen
+  ```typescript
+  const result = await validateInput(dto)
+    .andThen(dto => parsePayload(dto))
+    .andThen(payload => saveToDb(payload));
+  ```
+
+  ### Reglas a seguir
+  - NUNCA uses throw/catch para errores de negocio: usa Result
+  - Los errores del dominio son strings union types ('NOT_FOUND' | 'INVALID' | 'CONFLICT')
+  - Usa run() para envolver funciones que pueden lanzar excepciones externas
+  - Usa track() cuando necesites metadatos de observabilidad (tiempo, contexto)

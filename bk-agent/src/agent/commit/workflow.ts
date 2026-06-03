@@ -1,0 +1,414 @@
+/**
+ * @description Commit Workflow — implementacion nativa TypeScript.
+ *
+ * Reemplaza commit-workflow.ps1. Usa execSync para operaciones git
+ * directamente desde Node.js, sin depender de PowerShell.
+ *
+ * El caller siempre corre runPreCommitTests() antes de llamar a
+ * runCommitWorkflow(), por eso los commits se crean con --no-verify.
+ */
+
+import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
+import { execSync, execFileSync, ExecSyncOptions } from 'child_process';
+import { checkGitConfig, getStagedFiles, stageAllChanges, validateStagedFilesMatchScope } from './git-utils';
+import { CommitWorkflowOptions, CommitWorkflowResult } from './types';
+
+// ── Git helpers ──────────────────────────────────────────────────────────────
+
+function git(cmd: string, opts?: Partial<ExecSyncOptions>): string {
+  return execSync(`git ${cmd}`, {
+    cwd: process.cwd(),
+    stdio: 'pipe',
+    timeout: 30_000,
+    ...opts,
+  }).toString().trim();
+}
+
+function currentBranch(): string {
+  return git('rev-parse --abbrev-ref HEAD');
+}
+
+function branchExists(name: string): boolean {
+  try { git(`show-ref --verify --quiet refs/heads/${name}`); return true; } catch { return false; }
+}
+
+function getBranchName(opts: {
+  branchType: string;
+  initials: string;
+  message: string;
+  version?: string;
+}): string {
+  if (opts.branchType === 'release') return `release/${opts.version ?? '0.0.0'}`;
+  const slug = opts.message.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return `${opts.branchType}/${opts.initials}_${slug}_${date}`;
+}
+
+function commitWithFile(message: string): void {
+  const rand = Math.random().toString(36).slice(2, 10);
+  const tmp = path.join(os.tmpdir(), `deepseek-commit-${rand}.txt`);
+  fs.writeFileSync(tmp, message, 'utf8');
+  try {
+    execFileSync('git', ['commit', '--no-verify', '-F', tmp], {
+      cwd: process.cwd(),
+      stdio: 'pipe',
+      timeout: 30_000,
+    });
+  } finally {
+    try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+  }
+}
+
+// ── Commit message ────────────────────────────────────────────────────────────
+
+function formatCommitMessage(opts: {
+  type: string;
+  scope: string;
+  message: string;
+  body?: string;
+  breakingChange?: boolean;
+}): string {
+  const breaking = opts.breakingChange ? '!' : '';
+  let msg = `${opts.type}${breaking}(${opts.scope}): ${opts.message}`;
+
+  const bodyParts: string[] = [];
+  if (opts.body) bodyParts.push(opts.body);
+
+  try {
+    const stat = execSync('git diff --cached --stat', { stdio: 'pipe', timeout: 10_000 })
+      .toString().trim();
+    if (stat) {
+      const lastLine = stat.split('\n').pop()?.trim();
+      if (lastLine) bodyParts.push(lastLine);
+    }
+  } catch { /* ignore */ }
+
+  if (bodyParts.length > 0) msg += '\n\n' + bodyParts.join('\n\n');
+  if (opts.breakingChange) msg += '\n\nBREAKING CHANGE: This commit introduces a breaking change.';
+
+  return msg;
+}
+
+// ── PR description ────────────────────────────────────────────────────────────
+
+function buildPRDescription(opts: {
+  type: string;
+  scope: string;
+  message: string;
+  body?: string;
+  breakingChange?: boolean;
+  branchName: string;
+  targetBranch: string;
+}): string {
+  const typeLabels: Record<string, string> = {
+    feat: '[Feature]', fix: 'Bug Fix', refactor: 'Refactor', test: 'Tests',
+    docs: 'Documentation', chore: '[Chore]', style: '[Style]',
+    perf: '[Performance]', ci: '[CI]', build: '[Build]', revert: '[Revert]',
+  };
+  const label = typeLabels[opts.type] ?? opts.type;
+  const scopeLabel = opts.scope.charAt(0).toUpperCase() + opts.scope.slice(1);
+  const bodyText = opts.body || `Implements ${opts.message} in the ${opts.scope} module.`;
+
+  let changedFiles = '- (unable to determine)';
+  try {
+    const base = git(`merge-base HEAD origin/${opts.targetBranch}`);
+    changedFiles = git(`diff --name-only ${base}..HEAD`)
+      .split('\n').filter(Boolean).map(f => `- ${f}`).join('\n');
+  } catch { /* ignore */ }
+
+  return [
+    `${label}: ${scopeLabel} -- ${opts.message}`,
+    bodyText,
+    '',
+    '### [Summary]',
+    bodyText,
+    '',
+    '### [Changes]',
+    `- **Scope:** \`${opts.scope}\``,
+    `- **Type:** \`${opts.type}\``,
+    `- **Message:** ${opts.message}`,
+    '',
+    '### [Branch]',
+    `- **Source:** \`${opts.branchName}\``,
+    `- **Target:** \`${opts.targetBranch}\``,
+    '',
+    '### [Files Changed]',
+    changedFiles,
+    '',
+    '### [QA Checklist]',
+    '- [ ] Code compiles without errors (`tsc --noEmit`)',
+    '- [ ] No TypeScript errors (`strict: true`)',
+    '- [ ] Changes are backward compatible',
+    '- [ ] Tested manually in terminal',
+    '',
+    '### [Notes]',
+    `- **Breaking Changes:** ${opts.breakingChange ? '[YES]' : '[NO]'}`,
+    '',
+    '---',
+    '> Generated by deepseek-code commit workflow',
+  ].join('\n');
+}
+
+// ── Sub-workflows ─────────────────────────────────────────────────────────────
+
+function runFinishFeature(): CommitWorkflowResult {
+  const branch = currentBranch();
+  try {
+    if (!branchExists('develop')) git('branch develop');
+    git('checkout develop');
+    git(`merge --no-ff ${branch} -m "feat(merge): merge ${branch} into develop"`);
+    git(`branch -d ${branch}`);
+    return {
+      success: true,
+      output: `Feature '${branch}' merged into develop and branch deleted.`,
+      branchName: 'develop',
+    };
+  } catch (err: unknown) {
+    try { git('merge --abort'); } catch { /* no merge in progress */ }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, output: '', error: msg };
+  }
+}
+
+function runFinishRelease(version?: string): CommitWorkflowResult {
+  const branch = currentBranch();
+  const v = version ?? branch.replace('release/', '');
+  try {
+    if (!branchExists('master')) git('branch master');
+    git('checkout master');
+    git(`merge --no-ff ${branch} -m "chore(release): merge release v${v} into master"`);
+    try { git(`tag -a "v${v}" -m "Release v${v}"`); } catch { /* tag may already exist */ }
+    if (!branchExists('develop')) git('branch develop');
+    git('checkout develop');
+    git(`merge --no-ff master -m "chore(release): merge master back into develop after v${v}"`);
+    git(`branch -d ${branch}`);
+    return {
+      success: true,
+      output: `Release v${v} complete. Merged to master, tagged, merged back to develop.`,
+      branchName: 'develop',
+    };
+  } catch (err: unknown) {
+    try { git('merge --abort'); } catch { /* no merge in progress */ }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, output: '', error: msg };
+  }
+}
+
+// ── detectCommitWorkflow ──────────────────────────────────────────────────────
+
+/**
+ * @description El workflow ahora es nativo TypeScript — siempre esta instalado.
+ * Se mantiene la firma para compatibilidad con los llamadores existentes.
+ */
+export function detectCommitWorkflow(): { installed: boolean; path: string | null } {
+  return { installed: true, path: null };
+}
+
+/**
+ * @description Detecta si el Makefile del workflow esta instalado.
+ */
+export function detectMakefile(): boolean {
+  return fs.existsSync(path.join(process.cwd(), 'Makefile'));
+}
+
+// ── runCommitWorkflow ─────────────────────────────────────────────────────────
+
+/**
+ * @description Ejecuta el commit workflow de forma nativa en TypeScript.
+ * Ya no invoca commit-workflow.ps1.
+ *
+ * @param options - Parametros del commit
+ * @returns Resultado de la ejecucion
+ */
+export async function runCommitWorkflow(options: CommitWorkflowOptions): Promise<CommitWorkflowResult> {
+  const cwd = process.cwd();
+
+  const gitConfigCheck = checkGitConfig();
+  if (!gitConfigCheck.ok) {
+    return {
+      success: false,
+      output: '',
+      error: [
+        'Git no tiene configurada la identidad del usuario.',
+        '',
+        'Configuralo con:',
+        '  git config --global user.name "Tu Nombre"',
+        '  git config --global user.email "tu@email.com"',
+        '',
+        `Faltan: ${gitConfigCheck.missing.join(', ')}`,
+      ].join('\n'),
+    };
+  }
+
+  if (options.autoStage && !options.finishFeature && !options.finishRelease) {
+    if (!stageAllChanges()) {
+      return { success: false, output: '', error: 'No se pudo ejecutar git add. Verifica que git este disponible.' };
+    }
+  }
+
+  if (!options.finishFeature && !options.finishRelease) {
+    const stagedFiles = getStagedFiles();
+    if (stagedFiles.length === 0) {
+      return {
+        success: false,
+        output: '',
+        error: [
+          'No hay archivos staged para commitear.',
+          '',
+          'Usa git add para stagear los archivos que quieras incluir:',
+          '  git add src/mi-archivo.ts',
+          '  git add -p  (stageo interactivo)',
+          '',
+          'Luego ejecuta @commit de nuevo.',
+        ].join('\n'),
+      };
+    }
+
+    if (options.scope) {
+      const validation = validateStagedFilesMatchScope(options.scope, stagedFiles);
+      if (!validation.valid) {
+        return { success: false, output: validation.message, error: `Los archivos staged no corresponden al scope "${options.scope}".` };
+      }
+      if (validation.mismatches.length > 0) console.warn(`\n${validation.message}\n`);
+    }
+  }
+
+  try {
+    if (options.finishFeature) return runFinishFeature();
+    if (options.finishRelease) return runFinishRelease(options.version);
+
+    // Regular commit
+    const type = options.type ?? 'chore';
+    const scope = options.scope ?? 'root';
+    const message = options.message ?? 'update';
+
+    // Developer initials for branch naming
+    let initials = options.developerInitials ?? '';
+    if (!initials) {
+      try {
+        initials = git('config user.name')
+          .split(/\s+/).map((p: string) => p[0] ?? '').join('').toLowerCase().slice(0, 3);
+      } catch { initials = 'dev'; }
+    }
+
+    // Determine branch
+    const effectiveBranchType = options.branchType ?? (type === 'fix' ? 'fix' : 'feature');
+    const targetBranch = effectiveBranchType === 'release' ? 'master' : 'develop';
+    const desiredBranch = getBranchName({ branchType: effectiveBranchType, initials, message, version: options.version });
+    let branchName = currentBranch();
+
+    if (branchName !== desiredBranch) {
+      if (branchExists(desiredBranch)) {
+        git(`checkout ${desiredBranch}`);
+      } else {
+        git(`checkout -b ${desiredBranch}`);
+      }
+      branchName = desiredBranch;
+    }
+
+    // Commit
+    const commitMsg = formatCommitMessage({ type, scope, message, body: options.body, breakingChange: options.breakingChange });
+    commitWithFile(commitMsg);
+
+    // Save PR description
+    const prBody = buildPRDescription({ type, scope, message, body: options.body, breakingChange: options.breakingChange, branchName, targetBranch });
+    const prDir = path.join(cwd, '.github');
+    if (!fs.existsSync(prDir)) fs.mkdirSync(prDir, { recursive: true });
+    fs.writeFileSync(path.join(prDir, 'PULL_REQUEST_TEMPLATE.md'), prBody, 'utf8');
+
+    return {
+      success: true,
+      output: [
+        `Commit creado: ${type}(${scope}): ${message}`,
+        `Branch: ${branchName}`,
+        `PR template guardado en .github/PULL_REQUEST_TEMPLATE.md`,
+      ].join('\n'),
+      branchName,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, output: '', error: msg };
+  }
+}
+
+// ── runPreCommitTests ─────────────────────────────────────────────────────────
+
+type Stack = 'go' | 'rust' | 'python' | 'rush' | 'node';
+
+async function detectStack(cwd: string): Promise<Stack> {
+  const exists = (f: string) => fs.existsSync(path.join(cwd, f));
+  if (exists('rush.json'))                              return 'rush';
+  if (exists('go.mod'))                                 return 'go';
+  if (exists('Cargo.toml'))                             return 'rust';
+  if (exists('pyproject.toml') || exists('requirements.txt')) return 'python';
+  return 'node';
+}
+
+function extractOutput(err: unknown): string {
+  if (err instanceof Error) {
+    const e = err as any;
+    return e.stdout?.toString() || e.stderr?.toString() || err.message || '';
+  }
+  return String(err);
+}
+
+/**
+ * @description Ejecuta los checks de pre-commit segun el stack detectado.
+ * - Go:     go build ./... + go test ./...
+ * - Rust:   cargo check + cargo test
+ * - Python: python -m pytest --tb=short
+ * - Rush:   rush build + rush test
+ * - Node:   npx tsc --noEmit + npx jest
+ *
+ * @returns { success, output }
+ */
+export async function runPreCommitTests(): Promise<{ success: boolean; output: string }> {
+  const cwd = process.cwd();
+  const execOpts: ExecSyncOptions = { cwd, timeout: 60_000, stdio: 'pipe' };
+  const stack = await detectStack(cwd);
+
+  const commands: Array<{ cmd: string; timeout?: number; label: string }> = stack === 'go'
+    ? [
+        { cmd: 'go build ./...', label: 'Go build' },
+        { cmd: 'go test ./...',  label: 'Go tests', timeout: 120_000 },
+      ]
+    : stack === 'rust'
+    ? [
+        { cmd: 'cargo check', label: 'Cargo check' },
+        { cmd: 'cargo test',  label: 'Cargo test', timeout: 120_000 },
+      ]
+    : stack === 'python'
+    ? [
+        { cmd: 'python -m pytest --tb=short', label: 'Pytest', timeout: 120_000 },
+      ]
+    : stack === 'rush'
+    ? [
+        { cmd: 'rush build', label: 'Rush build', timeout: 180_000 },
+        { cmd: 'rush test',  label: 'Rush test',  timeout: 180_000 },
+      ]
+    : [
+        { cmd: 'npx tsc --noEmit',                    label: 'TypeScript check' },
+        { cmd: 'npx jest --passWithNoTests --maxWorkers=1', label: 'Jest tests', timeout: 120_000 },
+      ];
+
+  for (const { cmd, label, timeout } of commands) {
+    try {
+      execSync(cmd, { ...execOpts, ...(timeout ? { timeout } : {}) });
+    } catch (err) {
+      const raw = extractOutput(err);
+      return {
+        success: false,
+        output: [
+          `${label} fallo. Corrige los errores antes de commitear.`,
+          '',
+          raw.slice(0, 3000),
+          raw.length > 3000 ? '\n... (salida truncada)' : '',
+        ].join('\n'),
+      };
+    }
+  }
+
+  return { success: true, output: `[${stack}] Pre-commit checks passed` };
+}

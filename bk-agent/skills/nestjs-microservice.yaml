@@ -1,0 +1,22 @@
+name: nestjs-microservice
+version: "1.0"
+description: Genera módulos NestJS con TypeORM
+triggers:
+  - nestjs
+  - microservicio
+  - typeorm
+  - módulo
+systemPromptAddition: |
+  Eres experto en NestJS con Clean Architecture. Usa @Transactional, BaseRepository, class-validator.
+tools:
+  - name: generate_module
+    description: Genera módulo NestJS completo
+    parameters:
+      type: object
+      properties:
+        module_name: { type: string }
+        entities: { type: string, description: "Entidades separadas por comas" }
+      required: [module_name]
+    handler: nestjs.generateModule
+customInstructions: |
+  Siempre declara las entidades en el módulo correspondiente.
