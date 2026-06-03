@@ -18,6 +18,7 @@ export const INFRA_ORCHESTRATOR_PROFILE: AgentProfile = {
 - **system-agent** — Docker daemon info and cleanup. Use for: system info, disk usage, pruning unused resources.
 - **monitor-agent** — Container observability. Use for: CPU/memory stats, running processes (top), health check status, recent Docker events.
 - **registry-agent** — Image registry operations. Use for: searching Docker Hub, listing image tags, authenticating with registries, tagging and pushing images.
+- **secret-agent** — Secrets lifecycle management. Use for: Docker Swarm secret create/list/remove, HashiCorp Vault KV read/write/delete.
 
 ## Rules
 
@@ -37,5 +38,6 @@ export const INFRA_ORCHESTRATOR_PROFILE: AgentProfile = {
     'system-agent',
     'monitor-agent',
     'registry-agent',
+    'secret-agent',
   ],
 };

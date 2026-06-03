@@ -19,6 +19,7 @@ import { K8S_AGENT_PROFILE } from './agents/k8s-agent';
 import { SYSTEM_AGENT_PROFILE } from './agents/system-agent';
 import { MONITOR_AGENT_PROFILE } from './agents/monitor-agent';
 import { REGISTRY_AGENT_PROFILE } from './agents/registry-agent';
+import { SECRET_AGENT_PROFILE } from './agents/secret-agent';
 
 // Docker tools
 import { containerCreate, containerExec, containerStop, containerRemove, containerLogs, containerInspect, containerList } from './tools/container';
@@ -50,6 +51,12 @@ import { containerStats, containerTop, containerHealth, eventsTail } from './too
 
 // Registry tools
 import { registryLogin, registryLogout, registrySearch, registryTags } from './tools/registry';
+
+// Secret tools
+import {
+  swarmSecretCreate, swarmSecretList, swarmSecretInspect, swarmSecretRemove,
+  vaultKvRead, vaultKvWrite, vaultKvList, vaultKvDelete,
+} from './tools/secret';
 
 export function createInfraEngine(transport: CallbackTransport): AgentEngine {
   const config = loadConfig();
@@ -86,7 +93,10 @@ export function createInfraEngine(transport: CallbackTransport): AgentEngine {
     // Monitor
     .register(containerStats).register(containerTop).register(containerHealth).register(eventsTail)
     // Registry
-    .register(registryLogin).register(registryLogout).register(registrySearch).register(registryTags);
+    .register(registryLogin).register(registryLogout).register(registrySearch).register(registryTags)
+    // Secret
+    .register(swarmSecretCreate).register(swarmSecretList).register(swarmSecretInspect).register(swarmSecretRemove)
+    .register(vaultKvRead).register(vaultKvWrite).register(vaultKvList).register(vaultKvDelete);
 
   const agentRegistry = new AgentRegistry();
   agentRegistry
@@ -99,7 +109,8 @@ export function createInfraEngine(transport: CallbackTransport): AgentEngine {
     .register(K8S_AGENT_PROFILE)
     .register(SYSTEM_AGENT_PROFILE)
     .register(MONITOR_AGENT_PROFILE)
-    .register(REGISTRY_AGENT_PROFILE);
+    .register(REGISTRY_AGENT_PROFILE)
+    .register(SECRET_AGENT_PROFILE);
 
   const providerRegistry = new ProviderRegistry();
   providerRegistry.register(
