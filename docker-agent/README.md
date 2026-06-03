@@ -12,12 +12,19 @@ User / MCP Client
 │  infra-orchestrator │  ← routes every request to the right specialist
 └──────────┬──────────┘
            │ delegates via ask_agent
-   ┌───────┴────────────────────────────────────────────┐
-   │                                                    │
-   ▼           ▼           ▼           ▼           ▼   │
-docker-agent  compose-agent  swarm-agent  k8s-agent  ...│
-                                                        │
-build-agent  monitor-agent  registry-agent  secret-agent│
+           │
+   ┌───────┼──────────────────────────────────────────────────┐
+   │       │                                                  │
+   ▼       ▼            ▼              ▼            ▼         ▼
+docker  compose       swarm          k8s         volume   containerd
+agent   agent         agent          agent        agent     agent
+   │
+   ├── monitor-agent    (stats, top, health, events)
+   ├── network-agent    (topology, diagnostics, DNS)
+   ├── registry-agent   (search, tags, login, push)
+   ├── secret-agent     (Swarm secrets, Vault KV)
+   ├── build-agent      (Node/Python/Go + image build)
+   └── system-agent     (info, prune)
 ```
 
 Each specialist agent has a fixed set of tools and never delegates further. The orchestrator aggregates their responses into a single structured reply.
@@ -133,7 +140,7 @@ The routing layer. Analyzes every incoming request and delegates to the right sp
 
 ### 🐳 docker-agent
 
-Manages individual Docker containers, images, and networks.
+Manages individual Docker containers, images, and basic networking. For advanced network topology and diagnostics, use network-agent.
 
 **Tools:** `container_list`, `container_create`, `container_exec`, `container_stop`, `container_remove`, `container_logs`, `container_inspect`, `image_pull`, `image_build`, `image_list`, `image_remove`, `image_tag`, `image_push`, `network_create`, `network_list`, `network_inspect`, `network_remove`, `network_connect`
 
@@ -337,6 +344,33 @@ Compiles and packages applications before containerization. Covers the full pipe
  and push it to Docker Hub"
 ```
 This triggers: `build_detect` → `build_node` → `image_build` → `image_tag` → `image_push`
+
+---
+
+### 🌐 network-agent
+
+Advanced Docker networking: full network lifecycle, container topology management, and connectivity diagnostics.
+
+**Tools:** `network_create`, `network_list`, `network_inspect`, `network_remove`, `network_prune`, `network_connect`, `network_disconnect`, `network_diagnose`, `network_dns_lookup`
+
+**Example requests:**
+```
+"List all Docker networks and their drivers"
+"Create an overlay network called backend with subnet 10.10.0.0/24"
+"Connect the api container to the backend network with the alias api-service"
+"Disconnect the old-worker container from the frontend network"
+"Remove all unused networks"
+"Can the api container reach the db container? Test with ping"
+"Check if port 5432 is open on the db container from the api container"
+"The api can't find the db by hostname — run a DNS lookup for 'db' from inside api"
+"Create a macvlan network attached to eth0 for bare-metal network access"
+```
+
+**Diagnostics workflow example:**
+```
+"The api container can't connect to postgres — diagnose the network issue"
+```
+This triggers: `network_inspect` → `network_diagnose` (ping) → `network_diagnose` (nc port 5432) → `network_dns_lookup`
 
 ---
 
