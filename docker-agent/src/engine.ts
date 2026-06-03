@@ -20,6 +20,7 @@ import { SYSTEM_AGENT_PROFILE } from './agents/system-agent';
 import { MONITOR_AGENT_PROFILE } from './agents/monitor-agent';
 import { REGISTRY_AGENT_PROFILE } from './agents/registry-agent';
 import { SECRET_AGENT_PROFILE } from './agents/secret-agent';
+import { BUILD_AGENT_PROFILE } from './agents/build-agent';
 
 // Docker tools
 import { containerCreate, containerExec, containerStop, containerRemove, containerLogs, containerInspect, containerList } from './tools/container';
@@ -51,6 +52,9 @@ import { containerStats, containerTop, containerHealth, eventsTail } from './too
 
 // Registry tools
 import { registryLogin, registryLogout, registrySearch, registryTags } from './tools/registry';
+
+// Build tools
+import { buildDetect, buildNode, buildPython, buildGo } from './tools/build';
 
 // Secret tools
 import {
@@ -92,6 +96,8 @@ export function createInfraEngine(transport: CallbackTransport): AgentEngine {
     .register(k8sLogs).register(k8sExec).register(k8sDelete)
     // Monitor
     .register(containerStats).register(containerTop).register(containerHealth).register(eventsTail)
+    // Build
+    .register(buildDetect).register(buildNode).register(buildPython).register(buildGo)
     // Registry
     .register(registryLogin).register(registryLogout).register(registrySearch).register(registryTags)
     // Secret
@@ -110,7 +116,8 @@ export function createInfraEngine(transport: CallbackTransport): AgentEngine {
     .register(SYSTEM_AGENT_PROFILE)
     .register(MONITOR_AGENT_PROFILE)
     .register(REGISTRY_AGENT_PROFILE)
-    .register(SECRET_AGENT_PROFILE);
+    .register(SECRET_AGENT_PROFILE)
+    .register(BUILD_AGENT_PROFILE);
 
   const providerRegistry = new ProviderRegistry();
   providerRegistry.register(
