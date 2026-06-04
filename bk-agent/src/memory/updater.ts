@@ -2,11 +2,62 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { MemoryContext } from '../bootstrap/memory-loader';
 import { readFileSafeAsync, writeFileSafeAsync } from '../shared/utils/encoding';
-import { createCheckpoint, listCheckpoints, readCheckpoint, compactSession, compactSessionContent, CheckpointSummary, listWorkspaces, ensureWorkspace, readWorkspaceMemory, getWorkspaceMemoryDir, WorkspaceInfo, DEFAULT_WORKSPACE } from '@bk/agent-core';
+import { createCheckpoint, listCheckpoints, readCheckpoint, compactSession, compactSessionContent, CheckpointSummary } from '@bk/agent-core';
 export { createCheckpoint, listCheckpoints, readCheckpoint, compactSession };
 export type { CheckpointSummary };
-export { listWorkspaces, ensureWorkspace, readWorkspaceMemory, getWorkspaceMemoryDir, DEFAULT_WORKSPACE };
-export type { WorkspaceInfo };
+
+// ── Workspace helpers (previously in @bk/agent-core, now local) ───────────────
+
+export const DEFAULT_WORKSPACE = 'default';
+
+export interface WorkspaceInfo {
+    name: string;
+    memoryDir: string;
+    isDefault: boolean;
+}
+
+export function getWorkspaceMemoryDir(projectBaseDir: string, name?: string): string {
+    if (!name || name === DEFAULT_WORKSPACE) {
+        return path.join(projectBaseDir, 'memory');
+    }
+    return path.join(projectBaseDir, 'workspaces', name, 'memory');
+}
+
+export async function listWorkspaces(projectBaseDir: string): Promise<WorkspaceInfo[]> {
+    const result: WorkspaceInfo[] = [{
+        name: DEFAULT_WORKSPACE,
+        memoryDir: path.join(projectBaseDir, 'memory'),
+        isDefault: true,
+    }];
+    const workspacesDir = path.join(projectBaseDir, 'workspaces');
+    try {
+        const entries = await fs.readdir(workspacesDir, { withFileTypes: true });
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            result.push({
+                name: entry.name,
+                memoryDir: path.join(workspacesDir, entry.name, 'memory'),
+                isDefault: false,
+            });
+        }
+    } catch { /* workspaces dir doesn't exist yet */ }
+    return result;
+}
+
+export async function ensureWorkspace(projectBaseDir: string, name: string): Promise<WorkspaceInfo> {
+    const memoryDir = getWorkspaceMemoryDir(projectBaseDir, name);
+    await fs.mkdir(path.join(memoryDir, 'checkpoints'), { recursive: true });
+    return { name, memoryDir, isDefault: name === DEFAULT_WORKSPACE };
+}
+
+export async function readWorkspaceMemory(projectBaseDir: string, name: string): Promise<{ sessionContent: string; projectContext: string }> {
+    const memoryDir = getWorkspaceMemoryDir(projectBaseDir, name);
+    let sessionContent = '';
+    let projectContext = '';
+    try { sessionContent = await fs.readFile(path.join(memoryDir, 'sesion-actual.md'), 'utf-8'); } catch { }
+    try { projectContext = await fs.readFile(path.join(memoryDir, 'contexto-proyecto.md'), 'utf-8'); } catch { }
+    return { sessionContent, projectContext };
+}
 import { getLocalProjectsBaseDir, getProjectMemoryDir, cwdToProjectKey, listLocalProjects } from '../bootstrap/memory-loader';
 import * as os from 'os';
 

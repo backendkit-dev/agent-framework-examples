@@ -1,10 +1,8 @@
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { MemoryContextInput } from '../agent/system-prompt';
-import { BootstrapHook } from '../reflection/hooks/bootstrap-hook';
 
-export interface MemoryContext extends MemoryContextInput {
+export interface MemoryContext {
     activeProject: string;
     sessionContent: string;
     projectContext: string;
@@ -14,8 +12,7 @@ export interface MemoryContext extends MemoryContextInput {
 }
 
 export interface MemoryLoaderOptions {
-    /** Hook opcional para reportar incidentes al Reflection Engine */
-    hook?: BootstrapHook;
+    hook?: { reportMemoryLoadFailure: (filePath: string, msg: string) => Promise<void> };
 }
 
 const SESSION_FILE     = 'sesion-actual.md';
