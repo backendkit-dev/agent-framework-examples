@@ -1,0 +1,97 @@
+version: 1
+
+orchestrator:
+  name: "Orquestador de Ventas"
+  provider: deepseek
+  vault:
+    path: ./vault
+    embedder: simple          # cambiar a "ollama" en producción para mejor semántica
+
+providers:
+  deepseek:
+    api_key: ${DEEPSEEK_API_KEY}
+    base_url: https://api.deepseek.com/v1
+    model: deepseek-chat
+
+flows:
+  - id: calificacion-lead
+    file: ./flows/calificacion-lead.yaml
+    trigger: "calificar|nuevo lead|prospecto|cliente potencial|lead entrante|nuevo contacto"
+
+  - id: propuesta-comercial
+    file: ./flows/propuesta-comercial.yaml
+    trigger: "propuesta|cotización|presupuesto comercial|elaborar oferta|armar propuesta"
+
+agents:
+  - id: lead-agent
+    name: "Especialista en Calificación de Leads"
+    description: >
+      Investiga y califica prospectos aplicando metodología BANT. Determina el
+      potencial comercial, identifica al decisor y evalúa el fit con el portafolio
+      de servicios de la empresa.
+    capabilities: [leads, calificacion, prospeccion, investigacion, bant, scoring, fit]
+    provider: deepseek
+    domain: ventas
+
+  - id: proposal-agent
+    name: "Especialista en Propuestas"
+    description: >
+      Redacta propuestas comerciales personalizadas. Define el alcance de servicios,
+      entregables concretos, cronograma por fases e hitos de control. Posiciona
+      el valor diferencial adaptado al perfil y necesidad de cada cliente.
+    capabilities: [propuestas, cotizaciones, alcance, entregables, cronograma, valor-diferencial]
+    provider: deepseek
+    domain: ventas
+    gate: true
+    gate_criteria:
+      - "El alcance está definido con entregables concretos y medibles"
+      - "El cronograma tiene hitos de control reales y es comprometible con el equipo"
+      - "El pricing propuesto está dentro de la política de descuentos vigente"
+      - "El documento refleja correctamente la necesidad comunicada por el cliente"
+
+  - id: pricing-agent
+    name: "Especialista en Pricing"
+    description: >
+      Calcula la estructura de precios según el catálogo de servicios. Aplica
+      descuentos dentro de la política vigente. Define condiciones de pago,
+      hitos de facturación y opciones incrementales.
+    capabilities: [pricing, descuentos, estructura-comercial, facturacion, margen, aar]
+    provider: deepseek
+    domain: ventas
+
+  - id: legal-sales-agent
+    name: "Revisor Legal Comercial"
+    description: >
+      Revisa contratos de servicios profesionales: SLA, cláusulas de responsabilidad,
+      confidencialidad, propiedad intelectual y condiciones de terminación.
+      Asegura el cumplimiento normativo y protege los intereses de la empresa.
+    capabilities: [contratos, clausulas, sla, nda, responsabilidad, ip, terminacion]
+    provider: deepseek
+    domain: legal
+    gate: true
+    gate_criteria:
+      - "Las cláusulas de responsabilidad están limitadas al monto del contrato"
+      - "Los SLA son operativamente alcanzables (no se promete disponibilidad 24/7 sin soporte)"
+      - "El contrato incluye NDA o cláusula de confidencialidad explícita"
+      - "La propiedad intelectual de los entregables está definida claramente"
+      - "Hay cláusula de terminación anticipada por ambas partes con preaviso razonable"
+
+  - id: crm-agent
+    name: "Agente CRM"
+    description: >
+      Registra actividades comerciales, actualiza etapas del pipeline, genera
+      notas de seguimiento y define próximas acciones con fecha. Mantiene
+      el historial completo y accionable de cada oportunidad.
+    capabilities: [crm, pipeline, seguimiento, actividades, oportunidades, follow-up, registro]
+    provider: deepseek
+    domain: ventas
+
+  - id: writer-agent
+    name: "Redactor Comercial"
+    description: >
+      Redacta emails, comunicaciones ejecutivas, resúmenes y documentos de presentación.
+      Adapta tono, extensión y contenido al perfil del interlocutor y al momento
+      del proceso de venta.
+    capabilities: [redaccion, emails, comunicaciones, resumen-ejecutivo, presentaciones, materiales]
+    provider: deepseek
+    domain: ventas

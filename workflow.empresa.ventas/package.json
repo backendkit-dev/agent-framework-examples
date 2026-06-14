@@ -1,0 +1,12 @@
+{
+  "name": "workflow-empresa-ventas",
+  "version": "0.1.0",
+  "description": "Ejemplo de workflow multi-agente para el equipo de ventas",
+  "type": "module",
+  "scripts": {
+    "test:lead":      "node test-flow.mjs calificacion-lead",
+    "test:propuesta": "node test-flow.mjs propuesta-comercial",
+    "test:libre":     "node test-flow.mjs dynamic"
+  },
+  "dependencies": {}
+}

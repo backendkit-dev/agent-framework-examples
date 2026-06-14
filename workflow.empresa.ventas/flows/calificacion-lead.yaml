@@ -1,0 +1,113 @@
+version: 1
+id: calificacion-lead
+name: "Calificación de Lead — {{payload.empresa}}"
+description: >
+  Investiga y califica un nuevo lead aplicando BANT. Estima el valor de la
+  oportunidad, genera el email de primer contacto y registra todo en el CRM.
+
+steps:
+  - id: s1-investigar
+    agent: lead-agent
+    depends_on: []
+    task: >
+      Investigar y calificar el siguiente prospecto aplicando metodología BANT.
+
+      DATOS DEL LEAD:
+      - Empresa: {{payload.empresa}}
+      - Contacto: {{payload.contacto}} — {{payload.cargo}}
+      - Email: {{payload.email}}
+      - Información inicial disponible: {{payload.descripcion}}
+
+      Producir un análisis estructurado con:
+
+      1. ANÁLISIS BANT
+         - Budget: ¿hay presupuesto asignado? ¿cuál es el rango probable?
+         - Authority: ¿es el decisor o hay comité? ¿quién firma?
+         - Need: ¿cuál es la necesidad real y qué tan urgente es?
+         - Timeline: ¿cuándo esperan tener la solución?
+
+      2. CALIFICACIÓN DEL LEAD
+         - HOT: intención de cierre clara en menos de 90 días
+         - WARM: oportunidad real pero en evaluación, 90-180 días
+         - COLD: exploratorio, sin presupuesto definido o > 180 días
+
+      3. FIT CON NUESTRO PORTAFOLIO
+         - Qué servicio(s) resuelven mejor su necesidad
+         - Fortaleza del fit (alto / medio / bajo) y por qué
+
+      4. SEÑALES DE ALERTA
+         - Riesgos o red flags detectados
+
+      5. PREGUNTAS CLAVE PARA VALIDAR
+         - 3-5 preguntas para el primer contacto que validen o corrijan los supuestos
+
+  - id: s2-estimar-valor
+    agent: pricing-agent
+    depends_on: [s1-investigar]
+    task: >
+      Estimar el valor económico de la oportunidad con {{payload.empresa}}.
+
+      ANÁLISIS DEL LEAD:
+      {{steps.s1-investigar.output}}
+
+      Calcular:
+      1. Servicio(s) recomendados del catálogo y su precio de lista
+      2. Rango de valor del contrato:
+         - Escenario conservador (mínimo viable para el cliente)
+         - Escenario esperado (propuesta óptima)
+         - Escenario expansión (si se amplía el alcance post-inicio)
+      3. Descuento máximo aplicable según calificación del lead y tamaño de oportunidad
+      4. ARR potencial si la relación se consolida a largo plazo
+      5. Tiempo estimado para recuperar el costo de adquisición del cliente
+
+  - id: s3-email-contacto
+    agent: writer-agent
+    depends_on: [s1-investigar, s2-estimar-valor]
+    task: >
+      Redactar el email de contacto inicial para {{payload.contacto}} de {{payload.empresa}}.
+
+      REGLAS para este email:
+      - Personalizado: mencionar algo específico de su empresa, sector o desafío detectado
+      - Valor concreto: qué problema específico podemos resolver (no presentación genérica)
+      - Call-to-action único: proponer una llamada de 30 minutos
+      - Subject line: máximo 60 caracteres, específico y que invite a abrir
+      - Cuerpo: máximo 150 palabras, directo al punto
+      - Tono: ejecutivo pero cercano, no comercial ni agresivo
+
+      CONTEXTO:
+      Análisis del lead: {{steps.s1-investigar.output}}
+      Valor potencial: {{steps.s2-estimar-valor.output}}
+
+      Entregar: subject line + cuerpo del email.
+
+  - id: s4-registrar-crm
+    agent: crm-agent
+    depends_on: [s1-investigar, s2-estimar-valor, s3-email-contacto]
+    task: >
+      Registrar el nuevo lead y todas las actividades en el CRM.
+
+      DATOS DEL PROSPECTO:
+      Empresa: {{payload.empresa}}
+      Contacto: {{payload.contacto}} | Cargo: {{payload.cargo}} | Email: {{payload.email}}
+
+      CALIFICACIÓN:
+      {{steps.s1-investigar.output}}
+
+      VALOR ESTIMADO:
+      {{steps.s2-estimar-valor.output}}
+
+      EMAIL DE CONTACTO GENERADO:
+      {{steps.s3-email-contacto.output}}
+
+      Generar el registro CRM completo con:
+      1. Ficha del prospecto (empresa, contacto, cargo, email, sector)
+      2. Etapa del pipeline: PROSPECTING
+      3. Calificación: HOT / WARM / COLD con justificación
+      4. Valor de la oportunidad: rango estimado (conservador / esperado / expansión)
+      5. Resumen del análisis BANT
+      6. Plan de seguimiento:
+         - Acción inmediata: envío del email de contacto
+         - Seguimiento #1: +5 días hábiles si no hay respuesta
+         - Seguimiento #2: +10 días hábiles (reencuadre del mensaje)
+         - Revisión de calificación: +15 días hábiles
+      7. Notas de contexto para el ejecutivo de cuenta

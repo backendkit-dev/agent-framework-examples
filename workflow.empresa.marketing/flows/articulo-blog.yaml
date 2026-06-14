@@ -1,0 +1,97 @@
+id: articulo-blog
+name: "Creación de Artículo de Blog"
+description: >
+  Pipeline completo para crear y distribuir un artículo de blog técnico.
+  Desde el brief estratégico hasta los posts de redes sociales para distribución.
+
+steps:
+  - id: s1-brief
+    agent: content-strategist
+    task: |
+      Crear el brief editorial completo para el artículo de blog.
+
+      PARÁMETROS:
+      - Tema: {{payload.tema}}
+      - Objetivo: {{payload.objetivo}}
+      - Audiencia: {{payload.audiencia}}
+      - Keywords objetivo: {{payload.keywords}}
+      - Tono: {{payload.tono}}
+
+      El brief debe incluir:
+      1. Ángulo editorial y propuesta de valor única (por qué este artículo, por qué ahora)
+      2. Estructura sugerida con H2 y H3 (mínimo 6 secciones)
+      3. Buyer persona primario al que apunta y en qué etapa del funnel está
+      4. 3-5 puntos clave que el lector debe llevarse
+      5. Llamado a la acción recomendado al final del artículo
+      6. Longitud recomendada (palabras)
+    depends_on: []
+
+  - id: s2-redaccion
+    agent: copywriter
+    task: |
+      Redactar el artículo de blog completo siguiendo el brief estratégico.
+
+      BRIEF:
+      {{steps.s1-brief.output}}
+
+      PARÁMETROS ORIGINALES:
+      - Tema: {{payload.tema}}
+      - Tono: {{payload.tono}}
+      - Audiencia: {{payload.audiencia}}
+
+      Requisitos de redacción:
+      - Seguir exactamente la estructura del brief
+      - Incluir ejemplos concretos y datos cuando sea posible
+      - Párrafos cortos (máximo 3-4 líneas) para buena legibilidad web
+      - Incluir al menos 2 listas o tablas para scanabilidad
+      - CTA al final según lo indicado en el brief
+      - Incluir propuesta de título principal (H1) y subtítulo
+    depends_on: [s1-brief]
+
+  - id: s3-seo
+    agent: seo-agent
+    gate: true
+    task: |
+      Revisar y optimizar el artículo para SEO. Proponer mejoras específicas y concretas.
+
+      ARTÍCULO REDACTADO:
+      {{steps.s2-redaccion.output}}
+
+      KEYWORDS OBJETIVO: {{payload.keywords}}
+
+      Entregables:
+      1. Meta título (50-60 caracteres) con keyword principal
+      2. Meta descripción (140-160 caracteres) con CTA
+      3. Lista de mejoras SEO on-page con prioridad (alta/media/baja)
+      4. Sugerencias de internal linking (qué artículos o páginas enlazar)
+      5. Densidad de keyword actual vs recomendada
+      6. Artículo revisado con las mejoras de alta prioridad aplicadas
+    depends_on: [s2-redaccion]
+
+  - id: s4-redes
+    agent: social-media-agent
+    task: |
+      Crear el plan de distribución en redes sociales para el artículo publicado.
+
+      ARTÍCULO (optimizado para SEO):
+      {{steps.s3-seo.output}}
+
+      TEMA: {{payload.tema}}
+      AUDIENCIA: {{payload.audiencia}}
+
+      Crear para cada plataforma:
+
+      LinkedIn (principal):
+      - Post de lanzamiento (hook poderoso + 3-5 insights del artículo + CTA)
+      - Post de seguimiento a los 7 días (un punto de vista diferente del mismo tema)
+      - Formato: texto largo nativo, sin link en el cuerpo (agregar en comentarios)
+
+      Twitter/X:
+      - Hilo de 5-7 tweets con los puntos más destacados
+      - Tweet individual de impacto (el insight más potente)
+
+      Calendario sugerido:
+      - Día 0: LinkedIn lanzamiento + Twitter hilo
+      - Día 3: Twitter tweet individual
+      - Día 7: LinkedIn seguimiento
+    depends_on: [s3-seo]

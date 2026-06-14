@@ -1,0 +1,119 @@
+id: campana-leads
+name: "Campaña de Generación de Leads"
+description: >
+  Diseño completo de una campaña de lead generation: estrategia, copies,
+  optimización SEO del contenido ancla, y definición de métricas y tracking.
+
+steps:
+  - id: s1-estrategia
+    agent: campaign-agent
+    gate: true
+    task: |
+      Diseñar la estrategia completa de la campaña de lead generation.
+
+      PARÁMETROS DE LA CAMPAÑA:
+      - Servicio/producto a promocionar: {{payload.servicio}}
+      - Segmento objetivo: {{payload.segmento}}
+      - Objetivo de la campaña: {{payload.objetivo}}
+      - Presupuesto disponible: {{payload.presupuesto}}
+      - Duración: {{payload.duracion}}
+      - Canal principal: {{payload.canal}}
+
+      La estrategia debe incluir:
+      1. Objetivo SMART con número concreto de leads esperados
+      2. Segmento primario y secundario con criterios ICP detallados
+      3. Propuesta de valor central de la campaña (el "gancho")
+      4. Mapa de canales: qué rol juega cada canal (awareness, conversión, nurturing)
+      5. Contenido ancla propuesto (lead magnet, webinar, artículo, etc.)
+      6. Journey del lead: touchpoints desde el primer contacto hasta MQL
+      7. Presupuesto sugerido por canal
+      8. Cronograma de activación semana a semana
+      9. Hipótesis principal y cómo la validaremos
+    depends_on: []
+
+  - id: s2-copies
+    agent: copywriter
+    task: |
+      Redactar todos los copies necesarios para la campaña aprobada.
+
+      ESTRATEGIA DE CAMPAÑA:
+      {{steps.s1-estrategia.output}}
+
+      SERVICIO: {{payload.servicio}}
+      SEGMENTO: {{payload.segmento}}
+
+      Entregar copies para:
+
+      1. ANUNCIOS (LinkedIn Ads o Google Ads según canal definido):
+         - 3 variantes de headline (hasta 150 caracteres)
+         - 3 variantes de descripción (hasta 300 caracteres)
+         - 1 copy largo para sponsored content en LinkedIn
+
+      2. LANDING PAGE:
+         - Headline principal (H1)
+         - Subtítulo de soporte
+         - 3-5 bullets de propuesta de valor
+         - Copy del formulario (qué pedimos y por qué)
+         - CTA button copy (3 variantes)
+         - Testimonial sugerido (estructura, no el texto real)
+
+      3. EMAIL DE BIENVENIDA (post-conversión):
+         - Subject line (3 variantes)
+         - Preheader
+         - Cuerpo del email de bienvenida (300-400 palabras)
+
+      4. SECUENCIA DE NURTURING (3 emails):
+         - Email 2 (día 3): entregar valor, sin vender
+         - Email 3 (día 7): caso de uso relevante
+         - Email 4 (día 14): propuesta directa con CTA a reunión
+    depends_on: [s1-estrategia]
+
+  - id: s3-seo-contenido
+    agent: seo-agent
+    task: |
+      Optimizar el contenido ancla de la campaña para SEO orgánico.
+      El tráfico orgánico complementará el paid para reducir el CPL a largo plazo.
+
+      ESTRATEGIA DE CAMPAÑA (para entender el contenido ancla):
+      {{steps.s1-estrategia.output}}
+
+      SERVICIO: {{payload.servicio}}
+      SEGMENTO: {{payload.segmento}}
+
+      Entregar:
+      1. 5-10 keywords relacionadas con el servicio ordenadas por prioridad
+         (volumen estimado, competencia, intención de búsqueda)
+      2. Estructura SEO para el contenido ancla (página de servicio o artículo)
+      3. Meta título y meta descripción para la landing page de la campaña
+      4. Recomendaciones de link building para amplificar el contenido
+      5. Estimación de timeline para resultados orgánicos
+    depends_on: [s1-estrategia]
+
+  - id: s4-metricas
+    agent: analytics-agent
+    task: |
+      Definir el plan de medición completo para la campaña.
+
+      ESTRATEGIA APROBADA:
+      {{steps.s1-estrategia.output}}
+
+      COPIES CREADOS:
+      {{steps.s2-copies.output}}
+
+      SEO Y KEYWORDS:
+      {{steps.s3-seo-contenido.output}}
+
+      SERVICIO: {{payload.servicio}}
+      PRESUPUESTO: {{payload.presupuesto}}
+      DURACIÓN: {{payload.duracion}}
+
+      Entregar:
+      1. KPIs primarios (máximo 3, vinculados al objetivo de negocio)
+      2. KPIs secundarios por canal (CTR, CPC, CPL, tasa de conversión landing)
+      3. Benchmarks de referencia por canal (qué es bueno vs malo)
+      4. Plan de tracking: qué eventos configurar en GA4 / pixel de LinkedIn
+      5. Dashboard sugerido: métricas a reportar semanalmente
+      6. Criterios de optimización: cuándo pausar un anuncio, cuándo escalar
+      7. ROI target: CPL máximo aceptable para que la campaña sea rentable
+         (considerar ticket promedio de los servicios y tasa de cierre histórica)
+    depends_on: [s2-copies, s3-seo-contenido]

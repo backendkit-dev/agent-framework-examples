@@ -1,0 +1,12 @@
+{
+  "name": "workflow-empresa-marketing",
+  "version": "0.1.0",
+  "description": "Ejemplo de workflow multi-agente para el equipo de marketing",
+  "type": "module",
+  "scripts": {
+    "test:blog":    "node test-flow.mjs articulo-blog",
+    "test:campana": "node test-flow.mjs campana-leads",
+    "test:libre":   "node test-flow.mjs dynamic"
+  },
+  "dependencies": {}
+}

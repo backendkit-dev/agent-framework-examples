@@ -1,0 +1,96 @@
+version: 1
+
+orchestrator:
+  name: "Orquestador de Marketing"
+  provider: deepseek
+  vault:
+    path: ./vault
+    embedder: simple
+
+providers:
+  deepseek:
+    api_key: ${DEEPSEEK_API_KEY}
+    base_url: https://api.deepseek.com/v1
+    model: deepseek-chat
+
+flows:
+  - id: articulo-blog
+    file: ./flows/articulo-blog.yaml
+    trigger: "artículo|blog|post|contenido|publicación|nota técnica"
+
+  - id: campana-leads
+    file: ./flows/campana-leads.yaml
+    trigger: "campaña|lead generation|generación de leads|demand gen|adquisición"
+
+agents:
+  - id: content-strategist
+    name: "Estratega de Contenido"
+    description: >
+      Define la estrategia de contenido: estructura, ángulo editorial, keywords objetivo,
+      buyer persona al que apunta, qué problema resuelve y cómo encaja en el funnel.
+      Produce un brief detallado que guía al resto del equipo.
+    capabilities: [estrategia, brief, editorial, funnel, buyer-persona, keywords, estructura]
+    provider: deepseek
+    domain: marketing
+
+  - id: copywriter
+    name: "Copywriter"
+    description: >
+      Redacta contenido de alta calidad: artículos de blog, emails, copies para ads,
+      landing pages y newsletters. Adapta tono, extensión y formato al canal y a la
+      audiencia indicada en el brief. Sigue la guía de marca y voz de la empresa.
+    capabilities: [redaccion, copywriting, blog, email, ads, landing-page, newsletter]
+    provider: deepseek
+    domain: marketing
+
+  - id: seo-agent
+    name: "Especialista SEO"
+    description: >
+      Optimiza contenido para motores de búsqueda. Revisa densidad de keywords, estructura
+      de headings, meta descripción, alt text, internal linking y legibilidad. Propone
+      mejoras concretas y valida que el contenido responda la intención de búsqueda.
+    capabilities: [seo, keywords, meta, headings, optimizacion, busqueda, ranking]
+    provider: deepseek
+    domain: marketing
+    gate: true
+    gate_criteria:
+      - "El título y H1 contienen la keyword principal de forma natural"
+      - "La meta descripción tiene entre 140-160 caracteres con CTA claro"
+      - "El contenido responde completamente la intención de búsqueda del keyword objetivo"
+      - "Hay al menos 2 oportunidades de internal linking identificadas"
+
+  - id: social-media-agent
+    name: "Especialista en Redes Sociales"
+    description: >
+      Crea la estrategia de distribución en redes sociales. Adapta el contenido a LinkedIn,
+      Instagram y Twitter/X con el formato, tono y hashtags apropiados para cada plataforma.
+      Propone el calendario de publicación y horarios óptimos.
+    capabilities: [linkedin, instagram, twitter, redes, distribucion, hashtags, calendario]
+    provider: deepseek
+    domain: marketing
+
+  - id: campaign-agent
+    name: "Especialista en Campañas"
+    description: >
+      Diseña campañas de marketing: objetivo, segmento, canales, mensajes clave, presupuesto
+      sugerido, cronograma y métricas de éxito. Define el journey del lead desde el awareness
+      hasta la conversión. Propone A/B tests y criterios de optimización.
+    capabilities: [campañas, lead-gen, funnel, presupuesto, segmentacion, journey, abtesting]
+    provider: deepseek
+    domain: marketing
+    gate: true
+    gate_criteria:
+      - "El objetivo de la campaña es SMART (específico, medible, alcanzable, relevante, temporal)"
+      - "El segmento objetivo está definido con criterios de ICP claros"
+      - "El presupuesto propuesto está dentro de los rangos históricos de la empresa"
+      - "Los KPIs incluyen métricas de negocio (leads calificados) y no solo métricas de vanidad"
+
+  - id: analytics-agent
+    name: "Analista de Marketing"
+    description: >
+      Define métricas, configura el tracking y analiza resultados de campañas y contenido.
+      Calcula CPL, CAC, ROI y LTV. Identifica qué funciona, qué no, y propone optimizaciones
+      basadas en datos. Genera reportes ejecutivos para dirección.
+    capabilities: [analytics, metricas, roi, cpl, cac, ltv, reporting, optimizacion, datos]
+    provider: deepseek
+    domain: marketing

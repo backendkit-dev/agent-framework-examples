@@ -1,0 +1,192 @@
+version: 1
+id: propuesta-comercial
+name: "Propuesta Comercial — {{payload.empresa}}"
+description: >
+  Elabora una propuesta comercial completa para un lead calificado: propuesta técnica
+  con gate de aprobación, pricing estructurado, revisión legal con gate, documento
+  final integrado y actualización del CRM.
+
+steps:
+  - id: s1-propuesta-tecnica
+    agent: proposal-agent
+    depends_on: []
+    gate: true
+    gate_criteria:
+      - "El alcance refleja correctamente la necesidad del cliente"
+      - "Los entregables son concretos, verificables y comprometibles"
+      - "La metodología es apropiada para el tipo y tamaño del proyecto"
+    task: >
+      Elaborar la propuesta técnica para {{payload.empresa}}.
+
+      DATOS DEL CLIENTE:
+      - Empresa: {{payload.empresa}}
+      - Contacto: {{payload.contacto}} — {{payload.cargo}}
+      - Servicio solicitado: {{payload.servicio}}
+      - Necesidad principal: {{payload.necesidad}}
+      - Presupuesto indicativo: {{payload.presupuesto}}
+      - Timeline esperado: {{payload.timeline}}
+      - Contexto adicional: {{payload.contexto}}
+
+      Estructura de la propuesta técnica:
+
+      ## 1. Resumen Ejecutivo
+      Problema que enfrenta el cliente y nuestra propuesta de valor en 3-4 oraciones.
+
+      ## 2. Nuestra Comprensión del Desafío
+      Demostrar que entendemos su contexto, pain points y objetivos de negocio.
+
+      ## 3. Solución Propuesta
+      Descripción de los servicios específicos del catálogo que aplicamos a su caso.
+
+      ## 4. Alcance y Entregables
+      Desglose por fase con entregables específicos y criterios de aceptación.
+
+      ## 5. Metodología y Gobernanza
+      Cómo trabajamos, frecuencia de reuniones, canales de comunicación, herramientas.
+
+      ## 6. Cronograma
+      Fases, hitos y duración estimada. Incluir dependencias del cliente.
+
+      ## 7. Equipo Propuesto
+      Perfiles necesarios (sin nombres) con dedicación estimada por fase.
+
+      ## 8. Por Qué Nosotros
+      3-4 diferenciadores concretos relevantes para este cliente y su contexto.
+
+  - id: s2-pricing
+    agent: pricing-agent
+    depends_on: [s1-propuesta-tecnica]
+    task: >
+      Estructurar la propuesta económica para {{payload.empresa}}.
+
+      PROPUESTA TÉCNICA APROBADA:
+      {{steps.s1-propuesta-tecnica.output}}
+
+      CONTEXTO ECONÓMICO:
+      Presupuesto indicativo del cliente: {{payload.presupuesto}}
+      Timeline: {{payload.timeline}}
+
+      Definir:
+
+      ## Estructura de Costos
+      Desglose por fase, perfil de recurso y dedicación.
+
+      ## Precio de Lista (sin descuento)
+      Total según catálogo de servicios vigente.
+
+      ## Descuento Estratégico
+      Descuento propuesto, justificación y límite máximo según política.
+
+      ## Precio Final
+      Tabla con precio por fase y total con descuento aplicado.
+
+      ## Condiciones de Pago
+      Recomendación de estructura (anticipo / hitos / mensual).
+
+      ## Hitos de Facturación
+      Fechas o entregables que disparan cada factura.
+
+      ## Opciones Adicionales
+      Servicios o módulos nice-to-have con precio incremental que el cliente
+      puede activar durante el proyecto.
+
+  - id: s3-revision-legal
+    agent: legal-sales-agent
+    depends_on: [s1-propuesta-tecnica, s2-pricing]
+    gate: true
+    gate_criteria:
+      - "Las cláusulas de responsabilidad están limitadas al monto del contrato o 12 meses de servicio"
+      - "Los SLA propuestos son operativamente alcanzables sin soporte 24/7 no comprometido"
+      - "El NDA o cláusula de confidencialidad cubre tanto código como información del cliente"
+      - "La propiedad intelectual de código personalizado es del cliente (o está explícitamente negociada)"
+    task: >
+      Revisar los aspectos legales y contractuales de la propuesta para {{payload.empresa}}.
+
+      PROPUESTA TÉCNICA:
+      {{steps.s1-propuesta-tecnica.output}}
+
+      ESTRUCTURA DE PRECIOS:
+      {{steps.s2-pricing.output}}
+
+      Para cada punto, dar el análisis y proponer redacción concreta para incluir en el contrato:
+
+      ## 1. Responsabilidad y Limitación de Daños
+      ¿Está bien limitada? ¿Hay riesgos de responsabilidad ilimitada?
+
+      ## 2. SLA y Garantías de Servicio
+      ¿Son alcanzables operativamente? ¿Hay penalidades implícitas?
+
+      ## 3. Confidencialidad (NDA)
+      ¿Cubre código fuente, datos del cliente, y documentación interna?
+
+      ## 4. Propiedad Intelectual
+      ¿Quién es dueño del código custom desarrollado? ¿Hay licencias de terceros?
+
+      ## 5. Terminación Anticipada
+      Condiciones para cada parte, preaviso mínimo, liquidación de trabajos en curso.
+
+      ## 6. Penalidades por Retraso
+      ¿Hay compromisos de fechas que puedan generar penalidades?
+
+      ## 7. Jurisdicción
+      Ley aplicable y foro de resolución de disputas.
+
+  - id: s4-documento-final
+    agent: writer-agent
+    depends_on: [s1-propuesta-tecnica, s2-pricing, s3-revision-legal]
+    task: >
+      Redactar el documento final de propuesta comercial para {{payload.empresa}}.
+
+      INTEGRAR:
+      - Propuesta técnica: {{steps.s1-propuesta-tecnica.output}}
+      - Estructura de precios: {{steps.s2-pricing.output}}
+      - Observaciones legales: {{steps.s3-revision-legal.output}}
+
+      El documento final debe ser un markdown ejecutivo profesional con esta estructura:
+
+      ---
+      # Propuesta Comercial
+      **Para:** {{payload.empresa}} | **Atención:** {{payload.contacto}}
+      **Fecha:** [fecha de hoy] | **Nº Propuesta:** PROP-[año]-[número]
+      **Validez:** 30 días corridos desde la fecha de emisión
+      ---
+
+      1. Resumen Ejecutivo
+      2. Nuestra Comprensión del Desafío
+      3. Solución Propuesta
+      4. Alcance y Entregables
+      5. Metodología y Cronograma
+      6. Equipo
+      7. Inversión (tabla de pricing integrada)
+      8. Condiciones de Pago
+      9. Por Qué Elegirnos
+      10. Términos y Condiciones (cláusulas legales resumidas)
+      11. Próximos Pasos
+
+      Tono: ejecutivo, claro, confiante. Sin jerga técnica excesiva.
+      Extensión: entre 1.500 y 2.500 palabras.
+
+  - id: s5-actualizar-crm
+    agent: crm-agent
+    depends_on: [s4-documento-final]
+    task: >
+      Actualizar el CRM con la propuesta comercial emitida para {{payload.empresa}}.
+
+      RESUMEN DE LA PROPUESTA:
+      {{steps.s4-documento-final.output}}
+
+      PRICING:
+      {{steps.s2-pricing.output}}
+
+      Registrar:
+      1. Mover oportunidad a etapa: PROPOSAL SENT
+      2. Fecha de emisión: hoy
+      3. Fecha de vencimiento: +30 días corridos
+      4. Valor de la oportunidad: precio final según pricing
+      5. Probabilidad de cierre estimada (basada en calificación y contexto)
+      6. Plan de seguimiento post-propuesta:
+         - Llamada de presentación: +1 día hábil
+         - Follow-up si no hay feedback: +5 días hábiles
+         - Revisión / negociación: +10 días hábiles
+         - Vencimiento / cierre o pérdida: +30 días
+      7. Notas para el ejecutivo: qué enfatizar en la presentación, objeciones esperadas
