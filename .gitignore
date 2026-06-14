@@ -1,0 +1,15 @@
+# Secrets
+.env
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Orchestrator runtime data (runs, RAG index)
+**/.orchestrator/runs/
+**/.orchestrator/rag-lance/
+
+# Logs
+*.log
