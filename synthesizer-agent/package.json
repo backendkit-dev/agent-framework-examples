@@ -1,0 +1,21 @@
+{
+  "name": "synthesizer-agent",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev":   "ts-node src/server.ts",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@backendkit-labs/agent-core":     "^0.22.3",
+    "@backendkit-labs/agent-coding":   "^0.19.3",
+    "@backendkit-labs/agent-protocol": "^0.2.0",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node":     "^10.9.2",
+    "typescript":  "^5.4.0"
+  }
+}

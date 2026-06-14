@@ -40,9 +40,10 @@ loadDotEnv(__dirname);
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
-const TRIAGE_PORT    = parseInt(process.env.TRIAGE_PORT    ?? '3301', 10);
-const FORMATTER_PORT = parseInt(process.env.FORMATTER_PORT ?? '3302', 10);
-const CURATOR_PORT   = parseInt(process.env.CURATOR_PORT   ?? '3200', 10);
+const TRIAGE_PORT      = parseInt(process.env.TRIAGE_PORT      ?? '3301', 10);
+const FORMATTER_PORT   = parseInt(process.env.FORMATTER_PORT   ?? '3302', 10);
+const CURATOR_PORT     = parseInt(process.env.CURATOR_PORT     ?? '3200', 10);
+const SYNTHESIZER_PORT = parseInt(process.env.SYNTHESIZER_PORT ?? '3303', 10);
 
 const ORCHESTRATOR_SERVER = path.resolve(
     __dirname,
@@ -51,11 +52,13 @@ const ORCHESTRATOR_SERVER = path.resolve(
 const ORCHESTRATOR_CONFIG = path.resolve(__dirname, 'orchestrator-mcp.yaml');
 
 const QUESTION = process.argv[2] ?? process.env.QUESTION ?? 'How does the Agent HTTP Protocol work?';
+const FLOW_ID  = process.env.FLOW_ID ?? 'knowledge-search-llm';
 
 // Inject port env vars so YAML ${VAR} expansion works
-process.env.TRIAGE_PORT    = String(TRIAGE_PORT);
-process.env.FORMATTER_PORT = String(FORMATTER_PORT);
-process.env.CURATOR_PORT   = String(CURATOR_PORT);
+process.env.TRIAGE_PORT      = String(TRIAGE_PORT);
+process.env.FORMATTER_PORT   = String(FORMATTER_PORT);
+process.env.CURATOR_PORT     = String(CURATOR_PORT);
+process.env.SYNTHESIZER_PORT = String(SYNTHESIZER_PORT);
 
 // ── HTTP health check ─────────────────────────────────────────────────────────
 
@@ -170,7 +173,9 @@ async function main() {
     }
 
     // ── Start local agents ───────────────────────────────────────────────────
-    console.log('\nStarting triage-agent and formatter-agent...');
+    console.log('\nStarting triage-agent, formatter-agent and synthesizer-agent...');
+
+    const synthDir = path.resolve(__dirname, '../synthesizer-agent');
 
     const triageProc = spawn('node', ['agents/triage-agent.mjs'], {
         cwd:   __dirname,
@@ -186,13 +191,23 @@ async function main() {
     });
     children.push(formatterProc);
 
+    const synthProc = spawn(process.execPath, ['dist/server.js'], {
+        cwd:   synthDir,
+        stdio: ['ignore', 'ignore', 'inherit'],
+        env:   { ...process.env },
+    });
+    synthProc.on('error', err => console.error('[synthesizer] spawn error:', err.message));
+    children.push(synthProc);
+
     // ── Wait for agents to be healthy ────────────────────────────────────────
     await Promise.all([
-        waitForAgent('triage-agent',    TRIAGE_PORT),
-        waitForAgent('formatter-agent', FORMATTER_PORT),
+        waitForAgent('triage-agent',      TRIAGE_PORT),
+        waitForAgent('formatter-agent',   FORMATTER_PORT),
+        waitForAgent('synthesizer-agent', SYNTHESIZER_PORT, 20_000),
     ]);
-    console.log(`  triage-agent    :${TRIAGE_PORT}  [ok]`);
-    console.log(`  formatter-agent :${FORMATTER_PORT}  [ok]`);
+    console.log(`  triage-agent      :${TRIAGE_PORT}  [ok]`);
+    console.log(`  formatter-agent   :${FORMATTER_PORT}  [ok]`);
+    console.log(`  synthesizer-agent :${SYNTHESIZER_PORT}  [ok]`);
 
     // ── Verify curator-codex ─────────────────────────────────────────────────
     try {
@@ -216,13 +231,13 @@ async function main() {
         banner('AGENTS', text(await mcp.callTool('list_agents', {})));
 
         // ── Run flow ─────────────────────────────────────────────────────────
-        console.log(`\nRunning flow: knowledge-search`);
+        console.log(`\nRunning flow: ${FLOW_ID}`);
         console.log(`Question: "${QUESTION}"\n`);
 
         const runResult = text(await mcp.callTool('run_flow', {
-            flow_id: 'knowledge-search',
+            flow_id: FLOW_ID,
             input:   { question: QUESTION, vault_path: process.env.VAULT_PATH ?? '' },
-        }, 120_000));
+        }, 180_000));
 
         banner('FLOW RESULT', runResult);
 

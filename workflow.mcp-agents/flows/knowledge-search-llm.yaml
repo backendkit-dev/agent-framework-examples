@@ -1,0 +1,29 @@
+version: 2
+id: knowledge-search-llm
+name: Knowledge Search Flow (LLM Synthesizer)
+description: >
+  Like knowledge-search but the final step uses an LLM multi-agent (planner + writer)
+  instead of the template formatter, producing a higher-quality synthesized answer.
+
+steps:
+  - id: classify
+    agent: triage
+    task: "Classify the incoming question and extract a precise search query for the knowledge vault"
+    capability: execute
+    gate: true
+    gate_criteria:
+      - "Category is correctly identified"
+      - "Search query is relevant and well-formed"
+
+  - id: search
+    agent: curator
+    task: "Search the vault for knowledge relevant to the query extracted in the classification step"
+    capability: execute
+    depends_on: [classify]
+    required: true
+
+  - id: synthesize
+    agent: synthesizer
+    task: "Synthesize the vault search results into a coherent, well-structured answer using LLM"
+    capability: execute
+    depends_on: [classify, search]

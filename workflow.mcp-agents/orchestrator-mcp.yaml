@@ -31,7 +31,19 @@ agents:
     instances:
       - url: "http://localhost:${FORMATTER_PORT}"
 
+  - id: synthesizer
+    description: "LLM multi-agent synthesizer: planner + writer produce coherent answers from vault content"
+    transport: http
+    strategy: round-robin
+    capability: execute
+    instances:
+      - url: "http://localhost:${SYNTHESIZER_PORT}"
+
 flows:
   - id: knowledge-search
     file: flows/knowledge-search.yaml
     trigger: "buscar|conocimiento|search|how|what|explain|guide|como|qué|cuál"
+
+  - id: knowledge-search-llm
+    file: flows/knowledge-search-llm.yaml
+    trigger: "sintetiza|synthesize|responde|analiza|explain deeply|elabora"
