@@ -1,0 +1,37 @@
+version: 2
+
+orchestrator:
+  name: "workflow.mcp-agents orchestrator"
+  data_dir: ".orchestrator-mcp-data"
+  # tenant_id: "test-tenant"
+
+agents:
+  - id: triage
+    description: "Classifies questions and extracts search queries"
+    transport: http
+    strategy: round-robin
+    capability: execute
+    instances:
+      - url: "http://localhost:${TRIAGE_PORT}"
+
+  - id: curator
+    description: "Searches the vault for relevant knowledge (curator-codex HTTP agent)"
+    transport: http
+    strategy: round-robin
+    capability: execute
+    instances:
+      - url: "http://localhost:${CURATOR_PORT}"
+        apiKey: "${CURATOR_HTTP_API_KEY}"
+
+  - id: formatter
+    description: "Formats results into a structured markdown response"
+    transport: http
+    strategy: round-robin
+    capability: execute
+    instances:
+      - url: "http://localhost:${FORMATTER_PORT}"
+
+flows:
+  - id: knowledge-search
+    file: flows/knowledge-search.yaml
+    trigger: "buscar|conocimiento|search|how|what|explain|guide|como|qué|cuál"

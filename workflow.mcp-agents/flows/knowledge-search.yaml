@@ -1,0 +1,29 @@
+version: 2
+id: knowledge-search
+name: Knowledge Search Flow
+description: >
+  Classifies a question, searches the vault for relevant knowledge,
+  and formats the results into a structured response.
+  A gate after classification allows the operator to verify the query before searching.
+
+steps:
+  - id: classify
+    agent: triage
+    task: "Classify the incoming question and extract a precise search query for the knowledge vault"
+    capability: execute
+    gate: true
+    gate_criteria:
+      - "Category is correctly identified"
+      - "Search query is relevant and well-formed"
+
+  - id: search
+    agent: curator
+    task: "Search the vault for knowledge relevant to the query extracted in the classification step"
+    capability: execute
+    depends_on: [classify]
+
+  - id: format
+    agent: formatter
+    task: "Format the search results into a clear, structured markdown response for the user"
+    capability: execute
+    depends_on: [classify, search]

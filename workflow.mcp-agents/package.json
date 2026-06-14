@@ -1,0 +1,16 @@
+{
+  "name": "workflow-mcp-agents",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Test agents for validating orchestrator-mcp-agent end-to-end",
+  "scripts": {
+    "test": "node test-flow.mjs knowledge-search",
+    "agents": "node agents/triage-agent.mjs & node agents/formatter-agent.mjs",
+    "triage": "node agents/triage-agent.mjs",
+    "formatter": "node agents/formatter-agent.mjs"
+  },
+  "dependencies": {
+    "@backendkit-labs/agent-protocol": "^0.1.0"
+  }
+}
