@@ -21,6 +21,7 @@ steps:
     task: "Search the vault for knowledge relevant to the query extracted in the classification step"
     capability: execute
     depends_on: [classify]
+    required: true
 
   - id: format
     agent: formatter
