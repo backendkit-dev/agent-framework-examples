@@ -1,0 +1,102 @@
+version: 1
+
+orchestrator:
+  name: "Orquestador de Soporte al Cliente"
+  provider: deepseek
+  vault:
+    path: ./vault
+    embedder: simple
+
+providers:
+  deepseek:
+    api_key: ${DEEPSEEK_API_KEY}
+    base_url: https://api.deepseek.com/v1
+    model: deepseek-chat
+
+flows:
+  - id: atencion-ticket
+    file: ./flows/atencion-ticket.yaml
+    trigger: "ticket|soporte|consulta|problema|error|bug|incidencia|reclamo|ayuda|no funciona|falla"
+
+  - id: incidente-critico
+    file: ./flows/incidente-critico.yaml
+    trigger: "incidente|crítico|caído|urgente|p1|p2|emergencia|producción|caída del sistema|outage"
+
+agents:
+  - id: triage-agent
+    name: "Agente de Triage"
+    description: >
+      Clasifica y prioriza tickets de soporte entrantes. Determina la urgencia (P1-P4),
+      el tipo de issue (bug, consulta, facturación, feature request), el área de producto
+      afectada y el nivel de soporte requerido (L1/L2/L3). Genera el contexto inicial
+      para el agente que tomará el ticket.
+    capabilities: [triage, clasificacion, prioridad, sla, routing, diagnostico-inicial]
+    provider: deepseek
+    domain: soporte
+
+  - id: support-agent
+    name: "Agente de Soporte L1"
+    description: >
+      Maneja tickets de soporte de nivel 1: consultas frecuentes, configuraciones estándar,
+      procedimientos documentados y troubleshooting básico. Usa la base de conocimiento para
+      dar respuestas precisas y consistentes. Si no puede resolver, prepara el contexto
+      para escalación a L2 con toda la información necesaria.
+    capabilities: [l1, soporte, faq, troubleshooting, kb, resolucion, guia-paso-a-paso]
+    provider: deepseek
+    domain: soporte
+
+  - id: technical-agent
+    name: "Agente Técnico L2"
+    description: >
+      Investigación técnica profunda de issues complejos. Diagnóstico de root cause,
+      análisis de logs, identificación de bugs, propuesta de workarounds y soluciones
+      definitivas. Documenta hallazgos técnicos para el equipo de ingeniería y para
+      enriquecer la base de conocimiento.
+    capabilities: [l2, tecnico, diagnostico, root-cause, logs, bugs, workaround, ingenieria]
+    provider: deepseek
+    domain: soporte
+    gate: true
+    gate_criteria:
+      - "El diagnóstico incluye el root cause o una hipótesis sólida con evidencia"
+      - "Se propone al menos un workaround inmediato para desbloquear al cliente"
+      - "La solución propuesta no implica cambios de datos o configuración sin respaldo"
+      - "Se documentaron los pasos de reproducción del issue"
+
+  - id: escalation-agent
+    name: "Agente de Escalación L3"
+    description: >
+      Gestiona incidentes críticos y escalaciones a ingeniería. Coordina la respuesta
+      ante outages, define el plan de acción con responsables y tiempos, y asegura que
+      se mantenga informado al cliente durante todo el incidente. Lidera el proceso de
+      postmortem y seguimiento de acciones correctivas.
+    capabilities: [l3, escalacion, incidente, outage, coordinacion, postmortem, p1, p2]
+    provider: deepseek
+    domain: soporte
+    gate: true
+    gate_criteria:
+      - "La escalación a ingeniería está justificada y el impacto está cuantificado"
+      - "Hay un responsable asignado (nombre o rol) para cada acción del plan"
+      - "El cliente fue notificado del incidente y del tiempo estimado de resolución"
+      - "Se definió el criterio de resolución: cómo sabemos que el incidente está cerrado"
+
+  - id: communication-agent
+    name: "Agente de Comunicación"
+    description: >
+      Redacta todas las comunicaciones hacia el cliente: respuestas a tickets, actualizaciones
+      de estado durante incidentes, emails de cierre, solicitudes de información adicional y
+      encuestas de satisfacción. Adapta el tono y nivel técnico al perfil del cliente.
+      Asegura que cada comunicación sea clara, empática y accionable.
+    capabilities: [comunicacion, redaccion, email, respuesta-cliente, estado, cierre, empatia]
+    provider: deepseek
+    domain: soporte
+
+  - id: knowledge-agent
+    name: "Agente de Base de Conocimiento"
+    description: >
+      Mantiene y mejora la base de conocimiento de soporte. Identifica gaps de documentación
+      a partir de tickets resueltos, propone nuevos artículos o actualizaciones de los
+      existentes, y sugiere mejoras en los procedimientos de atención para reducir el tiempo
+      de resolución en futuros tickets similares.
+    capabilities: [knowledge-base, documentacion, kb, articulos, mejora-continua, procedimientos]
+    provider: deepseek
+    domain: soporte

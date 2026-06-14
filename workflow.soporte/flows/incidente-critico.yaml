@@ -1,0 +1,218 @@
+version: 1
+id: incidente-critico
+name: "Incidente Crítico — {{payload.incidente_id}}"
+description: >
+  Gestión de incidentes P1/P2: confirmación y escalación con gate, diagnóstico
+  técnico profundo, plan de resolución con gate de aprobación, comunicado externo
+  al cliente y postmortem para prevenir recurrencias.
+
+steps:
+  - id: s1-confirmacion
+    agent: triage-agent
+    depends_on: []
+    gate: true
+    gate_criteria:
+      - "La prioridad P1/P2 está correctamente justificada con el impacto real"
+      - "El alcance del incidente está definido (cuántos clientes, qué funcionalidades)"
+      - "Se identificó el canal de comunicación de crisis y los responsables en guardia"
+      - "Hay un War Room o canal de coordinación definido"
+    task: |
+      Confirmar y documentar el incidente crítico para activar el protocolo de respuesta.
+
+      DATOS DEL INCIDENTE:
+      - ID: {{payload.incidente_id}}
+      - Reportado por: {{payload.reportado_por}}
+      - Fecha/hora de detección: {{payload.hora_deteccion}}
+      - Descripción inicial: {{payload.descripcion}}
+      - Sistemas afectados: {{payload.sistemas_afectados}}
+      - Clientes impactados (estimado): {{payload.clientes_impactados}}
+      - Síntomas observados: {{payload.sintomas}}
+
+      Producir el documento de apertura del incidente:
+
+      1. CLASIFICACIÓN
+         - Prioridad confirmada: P1 / P2 con justificación
+         - Tipo de incidente: outage total / degradación / pérdida de datos / seguridad / rendimiento
+         - Sistemas afectados con nivel de impacto por sistema
+
+      2. ALCANCE DEL IMPACTO
+         - Clientes afectados (cantidad y segmento)
+         - Funcionalidades no disponibles o degradadas
+         - Impacto en negocio estimado (revenue, operaciones, reputación)
+
+      3. HIPÓTESIS INICIALES
+         3 hipótesis de causa raíz ordenadas por probabilidad.
+
+      4. PLAN DE RESPUESTA INMEDIATA
+         - Acciones en las próximas 15 minutos
+         - Responsable de cada acción (rol)
+         - Canal de coordinación del equipo (War Room)
+
+      5. COMUNICACIÓN INICIAL
+         - A quién notificar dentro de la empresa (escalación interna)
+         - Si se debe notificar proactivamente a clientes ahora o esperar diagnóstico
+
+  - id: s2-diagnostico
+    agent: technical-agent
+    depends_on: [s1-confirmacion]
+    task: |
+      Realizar el diagnóstico técnico profundo del incidente.
+
+      DOCUMENTO DE APERTURA DEL INCIDENTE:
+      {{steps.s1-confirmacion.output}}
+
+      INFORMACIÓN TÉCNICA DISPONIBLE:
+      - Sistemas afectados: {{payload.sistemas_afectados}}
+      - Síntomas: {{payload.sintomas}}
+      - Logs o errores disponibles: {{payload.logs}}
+      - Cambios recientes en producción: {{payload.cambios_recientes}}
+
+      Producir el diagnóstico técnico:
+
+      1. ANÁLISIS DE CAUSA RAÍZ
+         Evaluación de cada hipótesis con la evidencia disponible.
+         Conclusión: causa raíz confirmada o hipótesis más probable con nivel de confianza.
+
+      2. ÁRBOL DE IMPACTO
+         Qué sistemas dependen del sistema afectado y cómo se propaga el fallo.
+
+      3. OPCIONES DE RESOLUCIÓN
+         Para cada opción: descripción, tiempo estimado, riesgo, impacto secundario.
+         - Opción A (más rápida): workaround o rollback
+         - Opción B (más definitiva): fix en producción
+         - Opción C (si aplica): fallback o degraded mode
+
+      4. RECOMENDACIÓN
+         Qué opción ejecutar primero y por qué, con los pasos concretos.
+
+      5. RIESGOS DE LA INTERVENCIÓN
+         Qué puede salir mal al aplicar la solución y cómo mitigarlo.
+
+  - id: s3-plan-resolucion
+    agent: escalation-agent
+    depends_on: [s2-diagnostico]
+    gate: true
+    gate_criteria:
+      - "La opción de resolución elegida está aprobada por el responsable técnico"
+      - "Hay un rollback plan definido si la solución empeora el incidente"
+      - "El tiempo estimado de resolución está actualizado y es realista"
+      - "Se definió quién ejecuta cada paso (no puede quedar sin responsable asignado)"
+    task: |
+      Diseñar y coordinar el plan de resolución del incidente.
+
+      DIAGNÓSTICO TÉCNICO:
+      {{steps.s2-diagnostico.output}}
+
+      CONTEXTO DEL INCIDENTE:
+      ID: {{payload.incidente_id}} | Sistemas: {{payload.sistemas_afectados}}
+      Clientes impactados: {{payload.clientes_impactados}}
+
+      Producir el plan de resolución:
+
+      1. DECISIÓN DE RESOLUCIÓN
+         Opción elegida con justificación y aprobación requerida.
+
+      2. RUNBOOK DE EJECUCIÓN
+         Pasos numerados con:
+         - Acción específica
+         - Responsable (rol)
+         - Tiempo estimado
+         - Criterio de verificación (cómo saber que el paso funcionó)
+
+      3. ROLLBACK PLAN
+         Si el fix empeora el incidente, qué hacer en los primeros 5 minutos.
+
+      4. CRITERIO DE RESOLUCIÓN
+         Cómo sabemos que el incidente está cerrado (métricas, checks, confirmación).
+
+      5. COMUNICACIÓN DURANTE LA RESOLUCIÓN
+         - Cada cuánto actualizar a clientes (ej: cada 30 minutos)
+         - Qué decirle al equipo interno
+         - Cuándo declarar "resuelto" públicamente
+
+      6. EQUIPO DE GUARDIA
+         Roles y responsabilidades durante la ejecución del plan.
+
+  - id: s4-comunicado-externo
+    agent: communication-agent
+    depends_on: [s1-confirmacion, s3-plan-resolucion]
+    task: |
+      Redactar las comunicaciones externas para el incidente {{payload.incidente_id}}.
+
+      CONTEXTO DEL INCIDENTE:
+      {{steps.s1-confirmacion.output}}
+
+      PLAN DE RESOLUCIÓN:
+      {{steps.s3-plan-resolucion.output}}
+
+      Redactar los 3 comunicados necesarios:
+
+      ## 1. COMUNICADO DE APERTURA (enviar ahora)
+      - Qué está pasando (sin jerga técnica, en términos de impacto al cliente)
+      - Qué estamos haciendo para resolverlo
+      - Tiempo estimado de resolución (dar rango, no promesas exactas)
+      - Dónde ver actualizaciones (status page, canal de comunicación)
+      - Contacto para urgencias
+
+      ## 2. ACTUALIZACIONES DE PROGRESO (template reutilizable)
+      Template con placeholders para actualizar cada 30 minutos durante el incidente:
+      - [HORA] Estado actual
+      - [AVANCE] Qué se hizo
+      - [PRÓXIMOS PASOS] Qué sigue
+      - [ETA] Estimación actualizada
+
+      ## 3. COMUNICADO DE CIERRE
+      - Confirmación de que el incidente fue resuelto
+      - Descripción breve de qué pasó y cómo se resolvió (sin exponer vulnerabilidades)
+      - Medidas tomadas para que no vuelva a ocurrir
+      - Disculpas y reconocimiento del impacto
+      - Crédito/compensación si aplica según política
+
+  - id: s5-postmortem
+    agent: technical-agent
+    depends_on: [s2-diagnostico, s3-plan-resolucion, s4-comunicado-externo]
+    task: |
+      Redactar el documento de postmortem del incidente {{payload.incidente_id}}.
+
+      DIAGNÓSTICO TÉCNICO:
+      {{steps.s2-diagnostico.output}}
+
+      PLAN Y RESOLUCIÓN:
+      {{steps.s3-plan-resolucion.output}}
+
+      DATOS DEL INCIDENTE:
+      - Hora de detección: {{payload.hora_deteccion}}
+      - Sistemas afectados: {{payload.sistemas_afectados}}
+      - Clientes impactados: {{payload.clientes_impactados}}
+
+      Estructura del postmortem (blameless — sin culpables, solo sistemas y procesos):
+
+      ## Resumen Ejecutivo
+      3-4 líneas: qué pasó, cuánto duró, impacto total.
+
+      ## Timeline
+      Cronología minuto a minuto desde la detección hasta la resolución.
+
+      ## Causa Raíz
+      Causa técnica confirmada. Usar "5 Whys" para llegar al root cause real.
+
+      ## Factores Contribuyentes
+      Condiciones que hicieron posible o empeoraron el incidente.
+
+      ## Qué Funcionó Bien
+      Partes del proceso de respuesta que fueron efectivas.
+
+      ## Qué No Funcionó
+      Gaps en detección, respuesta, comunicación o herramientas.
+
+      ## Acciones Correctivas
+      Lista priorizada de mejoras con responsable y fecha límite:
+      - Acciones de remediación inmediata (ya implementadas)
+      - Acciones de prevención a corto plazo (< 2 semanas)
+      - Acciones estructurales a mediano plazo (< 3 meses)
+
+      ## Métricas del Incidente
+      - MTTD (Mean Time to Detect)
+      - MTTA (Mean Time to Acknowledge)
+      - MTTR (Mean Time to Resolve)
+      - Clientes impactados y duración del impacto

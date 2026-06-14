@@ -1,0 +1,159 @@
+version: 1
+id: atencion-ticket
+name: "Atención de Ticket — {{payload.ticket_id}}"
+description: >
+  Pipeline completo de atención a un ticket de soporte: triage y priorización,
+  resolución L1 con la base de conocimiento, comunicación al cliente con gate de
+  aprobación, y registro de aprendizajes en la KB.
+
+steps:
+  - id: s1-triage
+    agent: triage-agent
+    depends_on: []
+    task: |
+      Clasificar y priorizar el siguiente ticket de soporte entrante.
+
+      DATOS DEL TICKET:
+      - ID: {{payload.ticket_id}}
+      - Cliente: {{payload.cliente}}
+      - Plan/Tier: {{payload.plan}}
+      - Canal de entrada: {{payload.canal}}
+      - Asunto: {{payload.asunto}}
+      - Descripción del problema: {{payload.descripcion}}
+      - Información del entorno (si la proporcionó): {{payload.entorno}}
+
+      Producir el triage completo:
+
+      1. PRIORIDAD
+         - P1 Crítico: sistema caído, impacto en producción, sin workaround
+         - P2 Alto: funcionalidad core degradada, impacto en operaciones
+         - P3 Medio: bug con workaround disponible o feature parcialmente afectada
+         - P4 Bajo: consulta, mejora sugerida o cosmético
+
+      2. TIPO DE ISSUE
+         - Bug / Error técnico
+         - Consulta / "How to"
+         - Solicitud de feature / mejora
+         - Problema de rendimiento / performance
+         - Acceso / permisos / facturación
+         - Integración con terceros
+
+      3. ÁREA DE PRODUCTO AFECTADA
+         Identificar qué módulo, API o componente está involucrado basándose en la descripción.
+
+      4. NIVEL DE SOPORTE REQUERIDO
+         - L1: resoluble con documentación existente o procedimiento estándar
+         - L2: requiere investigación técnica, acceso a logs o análisis de código
+         - L3: requiere escalación a ingeniería, posible bug en producción
+
+      5. SLA APLICABLE
+         Tiempo de respuesta y resolución según prioridad y plan del cliente.
+
+      6. INFORMACIÓN FALTANTE
+         Lista de datos adicionales que necesitamos del cliente para resolver más rápido
+         (si aplica).
+
+      7. CONTEXTO PARA EL AGENTE DE SOPORTE
+         Resumen ejecutivo de 3-4 líneas con lo que sabe el siguiente agente para arrancar.
+
+  - id: s2-resolucion
+    agent: support-agent
+    depends_on: [s1-triage]
+    task: |
+      Resolver el ticket de soporte usando la base de conocimiento.
+
+      TRIAGE DEL TICKET:
+      {{steps.s1-triage.output}}
+
+      TICKET ORIGINAL:
+      - Cliente: {{payload.cliente}} (Plan: {{payload.plan}})
+      - Asunto: {{payload.asunto}}
+      - Descripción: {{payload.descripcion}}
+      - Entorno: {{payload.entorno}}
+
+      Produce la respuesta de soporte L1:
+
+      1. DIAGNÓSTICO
+         Qué está causando el problema según la descripción y la base de conocimiento.
+
+      2. SOLUCIÓN PASO A PASO
+         Instrucciones claras y numeradas para que el cliente resuelva el problema.
+         Si hay un workaround mientras se investiga la causa raíz, indicarlo primero.
+
+      3. VERIFICACIÓN
+         Cómo sabe el cliente que el problema se resolvió (qué debe ver/comprobar).
+
+      4. ESTADO DE RESOLUCIÓN
+         - RESUELTO: el problema tiene solución documentada y completa
+         - NECESITA_INFO: falta información del cliente para continuar
+         - ESCALAR_L2: el issue supera el alcance de L1, necesita investigación técnica
+         - WORKAROUND: hay solución temporal pero el root cause requiere L2
+
+      5. ARTÍCULOS DE KB UTILIZADOS
+         Lista de artículos o secciones de la documentación consultados (para tracking).
+
+  - id: s3-comunicacion
+    agent: communication-agent
+    depends_on: [s1-triage, s2-resolucion]
+    gate: true
+    gate_criteria:
+      - "La respuesta es clara y accionable — el cliente sabe exactamente qué hacer"
+      - "El tono es empático sin ser condescendiente"
+      - "Si el issue no se resuelve completamente, se explica el próximo paso y el tiempo estimado"
+      - "No se incluye jerga interna ni información confidencial"
+    task: |
+      Redactar la respuesta al cliente para el ticket {{payload.ticket_id}}.
+
+      TRIAGE:
+      {{steps.s1-triage.output}}
+
+      RESOLUCIÓN L1:
+      {{steps.s2-resolucion.output}}
+
+      DATOS DEL CLIENTE:
+      - Nombre: {{payload.cliente}}
+      - Canal: {{payload.canal}}
+      - Plan: {{payload.plan}}
+
+      Redactar la comunicación completa:
+
+      ## Asunto del email / título de la respuesta
+      Claro, específico, que transmita que estamos trabajando en ello.
+
+      ## Cuerpo de la respuesta
+      - Apertura: reconocer el problema con empatía (1-2 líneas, sin excesos)
+      - Diagnóstico explicado en términos del cliente (no jerga técnica interna)
+      - Solución o próximos pasos numerados y claros
+      - Tiempo estimado si el problema no está completamente resuelto
+      - Cierre: cómo contactarnos si la solución no funciona o hay preguntas
+
+      ## Notas internas (no van al cliente)
+      - Información de contexto para el agente que haga seguimiento
+      - Acciones pendientes del equipo de soporte
+
+  - id: s4-kb
+    agent: knowledge-agent
+    depends_on: [s2-resolucion, s3-comunicacion]
+    task: |
+      Analizar el ticket resuelto y proponer mejoras a la base de conocimiento.
+
+      TICKET: {{payload.asunto}}
+      TRIAGE: {{steps.s1-triage.output}}
+      RESOLUCIÓN: {{steps.s2-resolucion.output}}
+
+      Evaluar:
+
+      1. ¿EXISTE ARTÍCULO EN LA KB?
+         - SÍ, está actualizado → no se requiere acción
+         - SÍ, pero está desactualizado o incompleto → proponer actualización
+         - NO → proponer nuevo artículo
+
+      2. PROPUESTA DE CONTENIDO (si aplica)
+         Si se necesita crear o actualizar un artículo, redactar el borrador completo
+         siguiendo la estructura: título + descripción del problema + causa + solución
+         paso a paso + verificación + casos relacionados.
+
+      3. MEJORAS AL PROCESO
+         Si este ticket reveló un gap en el proceso de atención (pregunta frecuente no
+         documentada, procedimiento ambiguo, criterio de escalación poco claro), proponer
+         la mejora específica.
