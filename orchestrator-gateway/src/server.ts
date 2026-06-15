@@ -80,6 +80,26 @@ app.post('/api/retry', async (req: Request, res: Response) => {
     }
 });
 
+// GET /api/runs — list all runs (for kanban board)
+app.get('/api/runs', async (_req: Request, res: Response) => {
+    try {
+        const text = await client.callTool('list_runs', {}, 10_000);
+        res.json(JSON.parse(text));
+    } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+    }
+});
+
+// GET /api/agents — agent health as JSON (for agent-studio)
+app.get('/api/agents', async (_req: Request, res: Response) => {
+    try {
+        const text = await client.callTool('list_agents_json', {}, 10_000);
+        res.json(JSON.parse(text));
+    } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+    }
+});
+
 // GET /api/health — gateway + agent health
 app.get('/api/health', async (_req: Request, res: Response) => {
     try {
