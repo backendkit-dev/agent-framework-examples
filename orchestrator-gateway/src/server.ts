@@ -151,6 +151,16 @@ app.post('/api/runs/:id/retry', async (req: Request, res: Response) => {
         .catch(err => console.error(`[retry background] ${req.params.id}: ${(err as Error).message}`));
 });
 
+// GET /api/config — full orchestrator config (agents + flows + settings)
+app.get('/api/config', async (_req: Request, res: Response) => {
+    try {
+        const text = await client.callTool('get_config', {}, 10_000);
+        res.json(JSON.parse(text));
+    } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+    }
+});
+
 // GET /api/agents — agent health as JSON (for agent-studio)
 app.get('/api/agents', async (_req: Request, res: Response) => {
     try {
