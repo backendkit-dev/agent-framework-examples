@@ -2,35 +2,28 @@ import 'dotenv/config';
 import * as path    from 'node:path';
 import * as fs      from 'node:fs';
 import express, { Request, Response } from 'express';
-import { OrchestratorMcpClient } from './mcp-client';
-import { parseFlowResult }       from './parser';
+import { OrchestratorMcpClient }  from './mcp-client';
+import { OrchestratorHttpClient } from './http-client';
+import { parseFlowResult }        from './parser';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const PORT = parseInt(process.env.GATEWAY_PORT ?? '3400', 10);
 
-const ORCHESTRATOR_SERVER = process.env.ORCHESTRATOR_SERVER
+const ORCHESTRATOR_HTTP_URL = process.env.ORCHESTRATOR_HTTP_URL;   // e.g. http://localhost:3500
+const ORCHESTRATOR_SERVER   = process.env.ORCHESTRATOR_SERVER
     ?? path.resolve(__dirname, '../../../backendkit-agents/packages/orchestrator-mcp-agent/dist/server.js');
-
-const ORCHESTRATOR_CONFIG = process.env.ORCHESTRATOR_CONFIG
+const ORCHESTRATOR_CONFIG   = process.env.ORCHESTRATOR_CONFIG
     ?? path.resolve(__dirname, '../../workflow.mcp-agents/orchestrator-mcp.yaml');
 
-if (!fs.existsSync(ORCHESTRATOR_SERVER)) {
-    console.error(`[gateway] orchestrator not built: ${ORCHESTRATOR_SERVER}`);
-    console.error('Run: cd ../../../backendkit-agents/packages/orchestrator-mcp-agent && npm run build');
-    process.exit(1);
-}
+// ── Orchestrator client (HTTP or stdio) ───────────────────────────────────────
 
-// ── MCP singleton ─────────────────────────────────────────────────────────────
+type OrchestratorClient = {
+    callTool(name: string, args: Record<string, unknown>, timeoutMs?: number): Promise<string>;
+    stop(): void;
+};
 
-const mcp = new OrchestratorMcpClient(ORCHESTRATOR_SERVER, ORCHESTRATOR_CONFIG, {
-    TRIAGE_PORT:          process.env.TRIAGE_PORT          ?? '3301',
-    FORMATTER_PORT:       process.env.FORMATTER_PORT       ?? '3302',
-    CURATOR_PORT:         process.env.CURATOR_PORT         ?? '3200',
-    SYNTHESIZER_PORT:     process.env.SYNTHESIZER_PORT     ?? '3303',
-    VAULT_PATH:           process.env.VAULT_PATH           ?? '',
-    CURATOR_HTTP_API_KEY: process.env.CURATOR_HTTP_API_KEY ?? '',
-});
+let client: OrchestratorClient;
 
 // ── Express app ───────────────────────────────────────────────────────────────
 
@@ -44,7 +37,7 @@ app.post('/api/run', async (req: Request, res: Response) => {
         input?:   Record<string, unknown>;
     };
     try {
-        const text   = await mcp.callTool('run_flow', { flow_id, input }, 180_000);
+        const text   = await client.callTool('run_flow', { flow_id, input }, 180_000);
         res.json(parseFlowResult(text));
     } catch (err) {
         res.status(500).json({ error: (err as Error).message });
@@ -56,7 +49,7 @@ app.post('/api/approve', async (req: Request, res: Response) => {
     const { run_id, feedback } = req.body as { run_id: string; feedback?: string };
     if (!run_id) { res.status(400).json({ error: 'run_id required' }); return; }
     try {
-        const text   = await mcp.callTool('orchestrator_approve', { run_id, feedback }, 180_000);
+        const text   = await client.callTool('orchestrator_approve', { run_id, feedback }, 180_000);
         res.json(parseFlowResult(text));
     } catch (err) {
         res.status(500).json({ error: (err as Error).message });
@@ -68,7 +61,7 @@ app.post('/api/reject', async (req: Request, res: Response) => {
     const { run_id, feedback } = req.body as { run_id: string; feedback?: string };
     if (!run_id) { res.status(400).json({ error: 'run_id required' }); return; }
     try {
-        const text = await mcp.callTool('orchestrator_reject', { run_id, feedback }, 10_000);
+        const text = await client.callTool('orchestrator_reject', { run_id, feedback }, 10_000);
         res.json({ status: 'rejected', message: text });
     } catch (err) {
         res.status(500).json({ error: (err as Error).message });
@@ -80,7 +73,7 @@ app.post('/api/retry', async (req: Request, res: Response) => {
     const { run_id, feedback } = req.body as { run_id: string; feedback?: string };
     if (!run_id) { res.status(400).json({ error: 'run_id required' }); return; }
     try {
-        const text = await mcp.callTool('orchestrator_retry', { run_id, feedback }, 180_000);
+        const text = await client.callTool('orchestrator_retry', { run_id, feedback }, 180_000);
         res.json(parseFlowResult(text));
     } catch (err) {
         res.status(500).json({ error: (err as Error).message });
@@ -90,7 +83,7 @@ app.post('/api/retry', async (req: Request, res: Response) => {
 // GET /api/health — gateway + agent health
 app.get('/api/health', async (_req: Request, res: Response) => {
     try {
-        const agents = await mcp.callTool('list_agents', {}, 10_000);
+        const agents = await client.callTool('list_agents', {}, 10_000);
         res.json({ ok: true, gateway: `http://localhost:${PORT}`, agents });
     } catch (err) {
         res.status(500).json({ ok: false, error: (err as Error).message });
@@ -99,21 +92,45 @@ app.get('/api/health', async (_req: Request, res: Response) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
-mcp.start()
-    .then(() => {
-        app.listen(PORT, () => {
-            console.log(`[orchestrator-gateway] ready on :${PORT}`);
-            console.log(`  POST /api/run     — start a flow`);
-            console.log(`  POST /api/approve — approve a gate`);
-            console.log(`  POST /api/reject  — reject a gate`);
-            console.log(`  POST /api/retry   — retry a failed step`);
-            console.log(`  GET  /api/health  — agent status`);
+async function start() {
+    if (ORCHESTRATOR_HTTP_URL) {
+        // ── HTTP mode: orchestrator runs as a separate service ────────────────
+        client = new OrchestratorHttpClient(ORCHESTRATOR_HTTP_URL);
+        console.log(`[orchestrator-gateway] → orchestrator at ${ORCHESTRATOR_HTTP_URL}`);
+    } else {
+        // ── Stdio mode: gateway spawns the orchestrator process ───────────────
+        if (!fs.existsSync(ORCHESTRATOR_SERVER)) {
+            console.error(`[gateway] orchestrator not built: ${ORCHESTRATOR_SERVER}`);
+            console.error('Run: cd ../../../backendkit-agents/packages/orchestrator-mcp-agent && npm run build');
+            process.exit(1);
+        }
+        const mcpClient = new OrchestratorMcpClient(ORCHESTRATOR_SERVER, ORCHESTRATOR_CONFIG, {
+            TRIAGE_PORT:          process.env.TRIAGE_PORT          ?? '3301',
+            FORMATTER_PORT:       process.env.FORMATTER_PORT       ?? '3302',
+            CURATOR_PORT:         process.env.CURATOR_PORT         ?? '3200',
+            SYNTHESIZER_PORT:     process.env.SYNTHESIZER_PORT     ?? '3303',
+            VAULT_PATH:           process.env.VAULT_PATH           ?? '',
+            CURATOR_HTTP_API_KEY: process.env.CURATOR_HTTP_API_KEY ?? '',
         });
-    })
-    .catch(err => {
-        console.error('[gateway] failed to start orchestrator:', err.message);
-        process.exit(1);
-    });
+        await mcpClient.start();
+        client = mcpClient;
+        console.log(`[orchestrator-gateway] → orchestrator via stdio (embedded)`);
+    }
 
-process.on('SIGINT',  () => { mcp.stop(); process.exit(0); });
-process.on('SIGTERM', () => { mcp.stop(); process.exit(0); });
+    app.listen(PORT, () => {
+        console.log(`[orchestrator-gateway] ready on :${PORT}`);
+        console.log(`  POST /api/run     — start a flow`);
+        console.log(`  POST /api/approve — approve a gate`);
+        console.log(`  POST /api/reject  — reject a gate`);
+        console.log(`  POST /api/retry   — retry a failed step`);
+        console.log(`  GET  /api/health  — agent status`);
+    });
+}
+
+start().catch(err => {
+    console.error('[gateway] startup failed:', err.message);
+    process.exit(1);
+});
+
+process.on('SIGINT',  () => { client?.stop(); process.exit(0); });
+process.on('SIGTERM', () => { client?.stop(); process.exit(0); });
