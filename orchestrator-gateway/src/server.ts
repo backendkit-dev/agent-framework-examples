@@ -25,6 +25,29 @@ type OrchestratorClient = {
 
 let client: OrchestratorClient;
 
+// ── SSE broadcast ─────────────────────────────────────────────────────────────
+
+const sseClients = new Set<import('express').Response>();
+let lastRunsJson  = '';
+
+function broadcastRuns(json: string) {
+    const data = `data: ${json}\n\n`;
+    for (const res of sseClients) res.write(data);
+}
+
+// Poll orchestrator every 1 s; push to SSE clients when runs change
+function startRunsPoller() {
+    setInterval(async () => {
+        try {
+            const json = await client.callTool('list_runs', {}, 5_000);
+            if (json !== lastRunsJson) {
+                lastRunsJson = json;
+                broadcastRuns(json);
+            }
+        } catch { /* ignore transient errors */ }
+    }, 1_000);
+}
+
 // ── Express app ───────────────────────────────────────────────────────────────
 
 const app = express();
@@ -86,6 +109,48 @@ app.get('/api/runs', async (_req: Request, res: Response) => {
     }
 });
 
+// GET /api/runs/stream — SSE live feed
+app.get('/api/runs/stream', (req: Request, res: Response) => {
+    res.setHeader('Content-Type',                 'text/event-stream');
+    res.setHeader('Cache-Control',                'no-cache');
+    res.setHeader('Connection',                   'keep-alive');
+    res.setHeader('X-Accel-Buffering',            'no');
+    res.setHeader('Access-Control-Allow-Origin',  '*');
+    res.flushHeaders();
+
+    if (lastRunsJson) res.write(`data: ${lastRunsJson}\n\n`);
+
+    sseClients.add(res);
+    req.on('close', () => sseClients.delete(res));
+});
+
+// POST /api/runs/:id/approve — RESTful alias
+app.post('/api/runs/:id/approve', async (req: Request, res: Response) => {
+    const { feedback } = req.body as { feedback?: string };
+    res.status(202).json({ accepted: true, run_id: req.params.id });
+    client.callTool('orchestrator_approve', { run_id: req.params.id, feedback }, 300_000)
+        .catch(err => console.error(`[approve background] ${req.params.id}: ${(err as Error).message}`));
+});
+
+// POST /api/runs/:id/reject — RESTful alias
+app.post('/api/runs/:id/reject', async (req: Request, res: Response) => {
+    const { reason } = req.body as { reason?: string };
+    try {
+        const text = await client.callTool('orchestrator_reject', { run_id: req.params.id, reason }, 10_000);
+        res.json({ status: 'rejected', message: text });
+    } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+    }
+});
+
+// POST /api/runs/:id/retry — RESTful alias
+app.post('/api/runs/:id/retry', async (req: Request, res: Response) => {
+    const { feedback } = req.body as { feedback?: string };
+    res.status(202).json({ accepted: true, run_id: req.params.id });
+    client.callTool('orchestrator_retry', { run_id: req.params.id, feedback }, 300_000)
+        .catch(err => console.error(`[retry background] ${req.params.id}: ${(err as Error).message}`));
+});
+
 // GET /api/agents — agent health as JSON (for agent-studio)
 app.get('/api/agents', async (_req: Request, res: Response) => {
     try {
@@ -135,11 +200,13 @@ async function start() {
 
     app.listen(PORT, () => {
         console.log(`[orchestrator-gateway] ready on :${PORT}`);
-        console.log(`  POST /api/run     — start a flow`);
-        console.log(`  POST /api/approve — approve a gate`);
-        console.log(`  POST /api/reject  — reject a gate`);
-        console.log(`  POST /api/retry   — retry a failed step`);
-        console.log(`  GET  /api/health  — agent status`);
+        console.log(`  POST /api/run              — start a flow`);
+        console.log(`  POST /api/approve          — approve a gate`);
+        console.log(`  POST /api/reject           — reject a gate`);
+        console.log(`  POST /api/retry            — retry a failed step`);
+        console.log(`  GET  /api/runs/stream      — SSE live feed`);
+        console.log(`  GET  /api/health           — agent status`);
+        startRunsPoller();
     });
 }
 
