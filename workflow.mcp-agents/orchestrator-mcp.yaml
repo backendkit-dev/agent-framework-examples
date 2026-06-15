@@ -36,6 +36,7 @@ agents:
     transport: http
     strategy: round-robin
     capability: execute
+    timeout: 120000
     instances:
       - url: "http://localhost:${SYNTHESIZER_PORT}"
 
