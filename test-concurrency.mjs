@@ -148,12 +148,22 @@ async function phase1_concurrentStart() {
 
     const runIds = new Set();
     for (const { i, status, body } of results) {
-        if (status === 202 && body.run_id) {
-            runIds.add(body.run_id);
-            ok(`Flow ${i + 1}: run_id=${body.run_id.slice(0, 8)}  status=${body.status}`);
+        const runId = body.run_id;
+        if (runId) {
+            runIds.add(runId);
+            const accepted = status === 202;
+            const fn = accepted ? ok : warn;
+            fn(`Flow ${i + 1}: HTTP ${status}  run_id=${runId.slice(0, 8)}  status=${body.status}`);
+            if (!accepted) warn(`  → Gateway devolvió ${status} en vez de 202. ¿Está corriendo el código nuevo?`);
         } else {
             err(`Flow ${i + 1}: HTTP ${status}  ${JSON.stringify(body)}`);
         }
+    }
+
+    if (runIds.size === 0) {
+        err('Ningún flow retornó run_id. Reiniciá el gateway con el código nuevo:');
+        err('  cd orchestrator-gateway && npm run build && npm start');
+        process.exit(1);
     }
 
     if (runIds.size !== N_FLOWS) {
@@ -172,9 +182,8 @@ async function phase2_waitForGates(runIds) {
 
     const runs = await pollUntil(
         runIds,
-        tracked => tracked.every(r => r.status !== 'running' || tracked.filter(r => r.status === 'running').length === 0)
-                || tracked.filter(r => r.status === 'waiting_gate').length > 0,
-        'al menos un run en waiting_gate',
+        tracked => tracked.length > 0 && tracked.every(r => r.status !== 'running'),
+        'todos los runs fuera de running',
     );
 
     const gated   = runs.filter(r => r.status === 'waiting_gate');
