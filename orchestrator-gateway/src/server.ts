@@ -161,6 +161,46 @@ app.get('/api/config', async (_req: Request, res: Response) => {
     }
 });
 
+// POST /api/config/agents — create or update agent
+app.post('/api/config/agents', async (req: Request, res: Response) => {
+    try {
+        const text = await client.callTool('save_agent', { agent: JSON.stringify(req.body) }, 10_000);
+        res.json(JSON.parse(text));
+    } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+    }
+});
+
+// DELETE /api/config/agents/:id — delete agent
+app.delete('/api/config/agents/:id', async (req: Request, res: Response) => {
+    try {
+        const text = await client.callTool('delete_agent', { id: req.params.id }, 10_000);
+        res.json(JSON.parse(text));
+    } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+    }
+});
+
+// POST /api/config/flows — create or update flow
+app.post('/api/config/flows', async (req: Request, res: Response) => {
+    try {
+        const text = await client.callTool('save_flow', { flow: JSON.stringify(req.body) }, 10_000);
+        res.json(JSON.parse(text));
+    } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+    }
+});
+
+// DELETE /api/config/flows/:id — delete flow
+app.delete('/api/config/flows/:id', async (req: Request, res: Response) => {
+    try {
+        const text = await client.callTool('delete_flow', { id: req.params.id }, 10_000);
+        res.json(JSON.parse(text));
+    } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+    }
+});
+
 // GET /api/agents — agent health as JSON (for agent-studio)
 app.get('/api/agents', async (_req: Request, res: Response) => {
     try {
