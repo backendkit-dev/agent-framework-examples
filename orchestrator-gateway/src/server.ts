@@ -30,33 +30,32 @@ let client: OrchestratorClient;
 const app = express();
 app.use(express.json());
 
-// POST /api/run — start a flow
+// POST /api/run — start a flow (async: returns run_id immediately, kanban polls for progress)
 app.post('/api/run', async (req: Request, res: Response) => {
     const { flow_id = 'knowledge-search-llm', input = {} } = req.body as {
         flow_id?: string;
         input?:   Record<string, unknown>;
     };
     try {
-        const text   = await client.callTool('run_flow', { flow_id, input }, 180_000);
-        res.json(parseFlowResult(text));
+        const text   = await client.callTool('start_flow', { flow_id, input }, 15_000);
+        const result = JSON.parse(text) as { run_id?: string; status?: string; error?: string };
+        if (result.error) { res.status(400).json(result); return; }
+        res.status(202).json({ accepted: true, ...result });
     } catch (err) {
         res.status(500).json({ error: (err as Error).message });
     }
 });
 
-// POST /api/approve — approve a paused gate
+// POST /api/approve — approve a paused gate (async: returns 202 immediately, flow resumes in background)
 app.post('/api/approve', async (req: Request, res: Response) => {
     const { run_id, feedback } = req.body as { run_id: string; feedback?: string };
     if (!run_id) { res.status(400).json({ error: 'run_id required' }); return; }
-    try {
-        const text   = await client.callTool('orchestrator_approve', { run_id, feedback }, 180_000);
-        res.json(parseFlowResult(text));
-    } catch (err) {
-        res.status(500).json({ error: (err as Error).message });
-    }
+    res.status(202).json({ accepted: true, run_id });
+    client.callTool('orchestrator_approve', { run_id, feedback }, 300_000)
+        .catch(err => console.error(`[approve background] ${run_id}: ${(err as Error).message}`));
 });
 
-// POST /api/reject — reject a paused gate
+// POST /api/reject — reject a paused gate (synchronous: instant state change)
 app.post('/api/reject', async (req: Request, res: Response) => {
     const { run_id, feedback } = req.body as { run_id: string; feedback?: string };
     if (!run_id) { res.status(400).json({ error: 'run_id required' }); return; }
@@ -68,16 +67,13 @@ app.post('/api/reject', async (req: Request, res: Response) => {
     }
 });
 
-// POST /api/retry — retry a waiting_retry run
+// POST /api/retry — retry a waiting_retry run (async: returns 202 immediately, flow resumes in background)
 app.post('/api/retry', async (req: Request, res: Response) => {
     const { run_id, feedback } = req.body as { run_id: string; feedback?: string };
     if (!run_id) { res.status(400).json({ error: 'run_id required' }); return; }
-    try {
-        const text = await client.callTool('orchestrator_retry', { run_id, feedback }, 180_000);
-        res.json(parseFlowResult(text));
-    } catch (err) {
-        res.status(500).json({ error: (err as Error).message });
-    }
+    res.status(202).json({ accepted: true, run_id });
+    client.callTool('orchestrator_retry', { run_id, feedback }, 300_000)
+        .catch(err => console.error(`[retry background] ${run_id}: ${(err as Error).message}`));
 });
 
 // GET /api/runs — list all runs (for kanban board)
