@@ -229,6 +229,13 @@ async function proxyDeploy(
     res.status(r.status).json(json);
 }
 
+// GET /api/deploy/settings — vault path + runtime info
+app.get('/api/deploy/settings', async (_req: Request, res: Response) => {
+    if (!requireHttpMode(res)) return;
+    try { await proxyDeploy('GET', '/v1/deploy/settings', res); }
+    catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
 // GET /api/deploy — list managed containers
 app.get('/api/deploy', async (_req: Request, res: Response) => {
     if (!requireHttpMode(res)) return;
