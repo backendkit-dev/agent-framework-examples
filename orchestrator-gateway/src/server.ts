@@ -201,6 +201,55 @@ app.delete('/api/config/flows/:id', async (req: Request, res: Response) => {
     }
 });
 
+// ── Deploy proxy (HTTP mode only — forwards directly to orchestrator) ─────────
+// These endpoints are not MCP tools; they hit /v1/deploy on the orchestrator.
+
+function requireHttpMode(res: Response): boolean {
+    if (!ORCHESTRATOR_HTTP_URL) {
+        res.status(501).json({ error: 'Deploy endpoints require HTTP orchestrator mode (set ORCHESTRATOR_HTTP_URL)' });
+        return false;
+    }
+    return true;
+}
+
+async function proxyDeploy(
+    method: string,
+    orchPath: string,
+    res:      Response,
+    body?:    unknown,
+    timeoutMs = 120_000,
+): Promise<void> {
+    const r = await fetch(`${ORCHESTRATOR_HTTP_URL}${orchPath}`, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body:    body ? JSON.stringify(body) : undefined,
+        signal:  AbortSignal.timeout(timeoutMs),
+    });
+    const json = await r.json();
+    res.status(r.status).json(json);
+}
+
+// GET /api/deploy — list managed containers
+app.get('/api/deploy', async (_req: Request, res: Response) => {
+    if (!requireHttpMode(res)) return;
+    try { await proxyDeploy('GET', '/v1/deploy', res); }
+    catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
+// POST /api/deploy — deploy a new agent container
+app.post('/api/deploy', async (req: Request, res: Response) => {
+    if (!requireHttpMode(res)) return;
+    try { await proxyDeploy('POST', '/v1/deploy', res, req.body, 180_000); }
+    catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
+// DELETE /api/deploy/:agentId — stop + unregister container
+app.delete('/api/deploy/:agentId', async (req: Request, res: Response) => {
+    if (!requireHttpMode(res)) return;
+    try { await proxyDeploy('DELETE', `/v1/deploy/${encodeURIComponent(req.params.agentId)}`, res); }
+    catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
 // GET /api/agents — agent health as JSON (for agent-studio)
 app.get('/api/agents', async (_req: Request, res: Response) => {
     try {
@@ -256,6 +305,9 @@ async function start() {
         console.log(`  POST /api/retry            — retry a failed step`);
         console.log(`  GET  /api/runs/stream      — SSE live feed`);
         console.log(`  GET  /api/health           — agent status`);
+        console.log(`  GET  /api/deploy           — list Docker agents`);
+        console.log(`  POST /api/deploy           — deploy agent container`);
+        console.log(`  DEL  /api/deploy/:agentId  — stop + remove agent`);
         startRunsPoller();
     });
 }
