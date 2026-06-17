@@ -263,14 +263,48 @@ export async function updateEngineInsights(
     );
 
     if (Buffer.byteLength(content, 'utf-8') > SESSION_MAX_BYTES) {
-        content = compactSessionContent(content);
+        content = compactSessionContentEs(content);
     }
 
     await writeFileSafeAsync(sesionFile, content);
     return `✅ Insights del engine actualizados: ${insights.length} patrones`;
 }
 
-// compactSessionContent is imported from @backendkit-labs/agent-core above
+// ── Local compaction for Spanish section headings ─────────────────────────────
+// compactSessionContent (from agent-core) targets English headings.
+// sesion-actual.md uses Spanish — truncate those sections locally first.
+
+function truncateSectionItems(
+    content: string,
+    title: string,
+    maxItems: number,
+    style: 'bullet' | 'numbered',
+): string {
+    const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`## ${escaped}\\n([\\s\\S]*?)(?=\\n---\\s*\\n|\\n## |$)`);
+    const match = re.exec(content);
+    if (!match) return content;
+    const body = match[1] ?? '';
+    const pattern = style === 'bullet' ? /^-\s+.+$/gm : /^\d+\.\s+.+$/gm;
+    const items = body.match(pattern) ?? [];
+    if (items.length <= maxItems) return content;
+    const kept = items.slice(-maxItems);
+    const newBody = style === 'numbered'
+        ? kept.map((line, i) => `${i + 1}. ${line.replace(/^\d+\.\s*/, '')}`).join('\n')
+        : kept.join('\n');
+    const sectionRe = new RegExp(`(## ${escaped}\\n)[\\s\\S]*?(?=\\n---\\s*\\n|\\n## |$)`);
+    return content.replace(sectionRe, `$1${newBody}\n`);
+}
+
+function compactSessionContentEs(content: string): string {
+    content = truncateSectionItems(content, 'Decisiones', 5, 'bullet');
+    content = truncateSectionItems(content, 'Issues Activos', 5, 'numbered');
+    // Proximos Pasos también puede crecer — preservar últimos 5
+    if (Buffer.byteLength(content, 'utf-8') > SESSION_MAX_BYTES) {
+        content = truncateSectionItems(content, 'Aprendizajes del Engine', 3, 'bullet');
+    }
+    return content;
+}
 
 // ── Session memory update ──────────────────────────────────────────────────────
 
@@ -357,7 +391,7 @@ export async function updateSessionMemory(
     );
 
     if (Buffer.byteLength(content, 'utf-8') > SESSION_MAX_BYTES) {
-        content = compactSessionContent(content);
+        content = compactSessionContentEs(content);
     }
 
     await writeFileSafeAsync(sesionFile, content);

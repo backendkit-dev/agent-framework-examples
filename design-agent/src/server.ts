@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { mkdirSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { cwdToProjectKey } from '@backendkit-labs/agent-core';
+import { cwdToProjectKey, atomicWriteSync } from '@backendkit-labs/agent-core';
 
 const APP_NAME = process.env.BK_APP_NAME ?? 'bk-agent';
 
@@ -59,7 +59,7 @@ class DesignStore {
 
     write(state: DesignState): void {
         state.updatedAt = new Date().toISOString().slice(0, 10);
-        writeFileSync(this.statePath, JSON.stringify(state, null, 2), 'utf-8');
+        atomicWriteSync(this.statePath, JSON.stringify(state, null, 2));
     }
 
     static listAll(appName = APP_NAME): Array<{ key: string; state?: DesignState }> {

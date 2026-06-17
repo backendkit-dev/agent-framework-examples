@@ -103,7 +103,7 @@ export function formatToolCall(name: string, argsStr: string): string {
       argsDisplay = str.length > 60 ? str.slice(0, 60) + '\u2026' : str;
     }
   } catch { }
-  return '\n' + chalk.hex(theme.colors.success)('\u25CF') + ' ' + chalk.bold(name) + chalk.hex(theme.colors.textDim)('(' + argsDisplay + ')');
+  return chalk.hex(theme.colors.success)('\u25CF') + ' ' + chalk.bold(name) + chalk.hex(theme.colors.textDim)('(' + argsDisplay + ')');
 }
 
 /**
@@ -166,8 +166,7 @@ export function formatResponseHeader(): string {
 
 export function formatAgentHeader(icon: string, name: string): string {
   const label = `${icon}  ${name}`;
-  const fill = Math.max(0, w() - label.length - 4);
-  return chalk.hex(theme.colors.success)('\n\u25C6 ') + chalk.bold(label) + chalk.hex(theme.colors.textDim)('  ' + '\u2500'.repeat(fill));
+  return chalk.hex(theme.colors.success)('\n\u25C6 ') + chalk.bold(label);
 }
 
 // Compact variant for sub-agents \u2014 name only, no fill dashes
@@ -257,18 +256,19 @@ export function formatHeader(info: HeaderInfo): string {
     agentName = 'general',
     skillsCount = 0,
     customAgentsCount = 0,
-    version = '0.2.0',
+    version = '1.0.0',
     activeCwd,
   } = info;
 
-  const BK = chalk.bold.hex(theme.colors.info);
-  const logo = [
-    BK('\u250F\u2513 \u2533\u250F\u2501'),
-    BK('\u2523\u253B\u2513\u2523\u253B\u2513'),
-    BK('\u2517\u2501\u251B\u253B \u253B'),
-  ];
+  const cols = Math.min(w(), 90);
+  const border = chalk.hex(theme.colors.border);
 
-  // Line 2: project [\u203A workspace] model agent
+  // Line 1: \u273B bk-agent vX.Y.Z
+  const title = chalk.hex(theme.colors.primary)('\u273B ') +
+    chalk.bold.hex(theme.colors.info)('bk') + chalk.bold.white('-agent') +
+    chalk.hex(theme.colors.textDim)('  v' + version);
+
+  // Line 2: project [\u203A workspace] \u00B7 model \u00B7 agent
   const workspaceSuffix = activeWorkspace && activeWorkspace !== 'default'
     ? chalk.hex(theme.colors.textDim)(' \u203A ') + chalk.hex(theme.colors.accent)(activeWorkspace)
     : '';
@@ -279,7 +279,7 @@ export function formatHeader(info: HeaderInfo): string {
   const agentLabel = chalk.hex(theme.colors.textDim)(agentIcon + ' ' + agentName);
   const line2Parts = [projectLabel, modelLabel, agentLabel];
 
-  // Line 3: cwd vault counts memory project
+  // Line 3: cwd \u00B7 vault \u00B7 counts \u00B7 memory project
   const vaultLabel = vaultConnected
     ? chalk.hex(theme.colors.success)('\uD83D\uDCDA ') + chalk.hex(theme.colors.success)(vaultName || 'vault')
     : chalk.hex(theme.colors.textDim)('\u25CB sin vault');
@@ -296,14 +296,14 @@ export function formatHeader(info: HeaderInfo): string {
   }
 
   const sep = chalk.hex(theme.colors.textDim)('  \u00B7  ');
-  const info2 = [
-    '   ' + chalk.bold.hex(theme.colors.info)('bk') + chalk.bold.white('-agent') + chalk.hex(theme.colors.textDim)('  v' + version),
-    '   ' + line2Parts.join(sep),
-    '   ' + line3Parts.join(sep),
-  ];
-
-  const lines = logo.map((l, i) => l + (info2[i] ?? ''));
-  return '\n' + lines.join('\n') + '\n';
+  // Caja redondeada estilo Claude Code: borde izquierdo + relleno, sin borde
+  // derecho (los emojis de doble ancho desalinear\u00EDan el cierre).
+  const topFill = Math.max(1, cols - visible(title).length - 5);
+  return '\n' +
+    border('\u256D\u2500 ') + title + ' ' + border('\u2500'.repeat(topFill)) + '\n' +
+    border('\u2502') + '  ' + line2Parts.join(sep) + '\n' +
+    border('\u2502') + '  ' + line3Parts.join(sep) + '\n' +
+    border('\u2570' + '\u2500'.repeat(Math.max(1, cols - 1))) + '\n';
 }
 
 // ── Diff Visual ───────────────────────────────────────────────────────────
@@ -611,72 +611,34 @@ function formatTable(tableLines: string[]): string | null {
   for (const line of tableLines) {
     const t = line.trim();
     if (!t.startsWith('|')) return null;
-    if (/^\|[\s\-:|]+\|$/.test(t)) {
-      headerEnd = rows.length;
-      continue;
-    }
-    const cells = t.slice(1, t.endsWith('|') ? -1 : undefined)
-      .split('|')
-      .map(c => c.trim());
+    if (/^\|[\s\-:|]+\|$/.test(t)) { headerEnd = rows.length; continue; }
+    const cells = t.slice(1, t.endsWith('|') ? -1 : undefined).split('|').map(c => c.trim());
     rows.push(cells);
   }
-
   if (rows.length === 0) return null;
 
   const colCount = Math.max(...rows.map(r => r.length));
-  for (const row of rows) {
-    while (row.length < colCount) row.push('');
-  }
+  for (const row of rows) { while (row.length < colCount) row.push(''); }
 
-  // Cell widths include 1 space padding on each side
-  const cellWidths: number[] = Array.from({ length: colCount }, (_, ci) =>
-    Math.max(6, ...rows.map(r => r[ci].length)) + 2
-  );
+  const termCols = Math.max(40, (process.stdout.columns || 80) - 4);
+  // Max column width: distribute evenly, cap at 40 chars
+  const colW = Math.min(40, Math.floor(termCols / colCount) - 2);
 
-  const termCols = Math.max(40, (process.stdout.columns || 80) - 2);
-  const totalBorders = colCount + 1;
-  const totalWidth = cellWidths.reduce((a, b) => a + b, 0) + totalBorders;
-
-  if (totalWidth > termCols) {
-    const available = termCols - totalBorders;
-    const totalContent = cellWidths.reduce((a, b) => a + b, 0);
-    for (let ci = 0; ci < colCount; ci++) {
-      cellWidths[ci] = Math.max(8, Math.round((cellWidths[ci] / totalContent) * available));
-    }
-  }
-
-  const b = chalk.hex(theme.colors.border);
-  const TOP = '┌' + cellWidths.map(w => '─'.repeat(w)).join('┬') + '┐';
-  const MID = '├' + cellWidths.map(w => '─'.repeat(w)).join('┼') + '┤';
-  const BOT = '└' + cellWidths.map(w => '─'.repeat(w)).join('┴') + '┘';
-
-  const out: string[] = [b(TOP)];
+  const truncate = (s: string, max: number) => s.length > max ? s.slice(0, max - 1) + '…' : s;
+  const out: string[] = [];
 
   for (let ri = 0; ri < rows.length; ri++) {
-    const row = rows[ri];
     const isHeader = headerEnd > 0 ? ri < headerEnd : ri === 0;
-    const wrapped: string[][] = row.map((cell, ci) => wrapText(cell, cellWidths[ci] - 2));
-    const maxLines = Math.max(...wrapped.map(c => c.length));
-
-    for (let l = 0; l < maxLines; l++) {
-      let rowStr = b('│');
-      for (let ci = 0; ci < colCount; ci++) {
-        const cellText = wrapped[ci]?.[l] ?? '';
-        const contentW = cellWidths[ci] - 2;
-        let cell: string;
-        if (isHeader) {
-          const pad = Math.max(0, contentW - cellText.length);
-          const lpad = Math.floor(pad / 2);
-          cell = ' ' + ' '.repeat(lpad) + chalk.bold.white(cellText) + ' '.repeat(pad - lpad) + ' ';
-        } else {
-          cell = ' ' + chalk.hex(theme.colors.textDim)(cellText.padEnd(contentW)) + ' ';
-        }
-        rowStr += cell + b('│');
-      }
-      out.push(rowStr);
+    const rowCells = rows[ri].map(c => truncate(c, colW));
+    const line = '  ' + rowCells.map((c, ci) => {
+      const cell = c.padEnd(colW);
+      return isHeader ? chalk.bold(cell) : chalk.hex(theme.colors.textDim)(cell);
+    }).join(chalk.dim('  ·  '));
+    out.push(line);
+    // Underline after header
+    if (isHeader && ri === (headerEnd > 0 ? headerEnd - 1 : 0)) {
+      out.push('  ' + chalk.dim('·'.repeat(Math.min(termCols, colCount * (colW + 5)))));
     }
-
-    out.push(b(ri < rows.length - 1 ? MID : BOT));
   }
 
   return out.join('\n');
@@ -755,13 +717,8 @@ export function formatMarkdown(text: string): string {
  */
 function formatRecap(line: string): string {
   const content = line.replace(/^\u203B\s*recap:\s*/i, '').trim();
-  const cols = Math.min(process.stdout.columns || 80, 80);
-  const bar = chalk.hex(theme.colors.textDim)('\u2504'.repeat(cols - 2));
-  return [
-    '\n' + bar,
-    chalk.bold.hex(theme.colors.accent)('  \u203B ') + chalk.bold.white('recap  ') + chalk.hex(theme.colors.textDim)('\u00B7') + '  ' + chalk.italic(content),
-    bar,
-  ].join('\n');
+  const preview = content.length > 120 ? content.slice(0, 117) + '\u2026' : content;
+  return chalk.dim('  \u203B  ') + chalk.dim.italic(preview);
 }
 
 /**

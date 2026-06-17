@@ -129,7 +129,7 @@ export class Spinner {
                 : '';
             const up = metrics.inputTokens > 0 ? ' \u00b7 \u2191 ' + (metrics.inputTokens / 1000).toFixed(1) + 'k tk' : '';
             const down = metrics.outputTokens > 0 ? ' \u2193 ' + (metrics.outputTokens / 1000).toFixed(1) + 'k tk' : '';
-            const statusContent = this.text + ' (' + elapsed + 's' + up + down + costStr + ')';
+            const statusContent = this.text + ' (esc interrumpe \u00b7 ' + elapsed + 's' + up + down + costStr + ')';
             const f = anim.nextFrame(performance.now());
             const frameChar = f.content || FRAMES[this.frameIdx % FRAMES.length];
             if (this.statusCallback) {
