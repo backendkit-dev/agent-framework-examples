@@ -15,12 +15,12 @@ module.exports = {
   testEnvironment: 'node',
 
   // -- Patrones de busqueda ----------------------------------------------------
-  // Tests unitarios: cualquier test en tests/ que NO este en tests/integration/
-  // Tests de integracion: tests/integration/**/*.test.ts
-  // Para ejecutar solo unitarios: npx jest --testPathIgnorePatterns=integration
-  // Para ejecutar solo integracion: npx jest tests/integration
+  // Tests en tests/**. Se quito `roots: ['<rootDir>/tests']`: ademas de ser
+  // redundante con testMatch, impedia que Jest instrumentara los archivos no
+  // importados por ningun test (collectCoverageFrom quedaba reducido a lo que los
+  // tests cargaban, ocultando el 87% sin cobertura).
   testMatch: ['**/tests/**/*.test.ts'],
-  testPathIgnorePatterns: [],
+  testPathIgnorePatterns: ['/node_modules/', '/legacy/'],
   moduleFileExtensions: ['ts', 'js', 'json'],
 
   // -- Paralelismo (CRITICO en Windows con 16GB RAM) --------------------------
@@ -38,11 +38,10 @@ module.exports = {
   cache: !process.env.NO_CACHE,
 
   // -- Reporters ---------------------------------------------------------------
-  // Reporter por defecto (summary) + reflection reporter para acumular incidentes en test-domain
-  reporters: [
-    process.env.VERBOSE ? ['default', { verbose: true }] : ['default', { verbose: false }],
-    '<rootDir>/scripts/jest-reflection-reporter.js',
-  ],
+  // Se elimino el 'jest-reflection-reporter': invocaba scripts/reflection-commit-bridge.mjs,
+  // que importa ../src/reflection/reflection-engine.js (no existe: src/ no tiene .js) y
+  // fallaba en silencio (ERR_MODULE_NOT_FOUND) en cada suite fallida.
+  reporters: [process.env.VERBOSE ? ['default', { verbose: true }] : ['default', { verbose: false }]],
 
   // -- Coverage ----------------------------------------------------------------
   collectCoverage: !!process.env.COLLECT_COVERAGE,
@@ -50,10 +49,26 @@ module.exports = {
   coverageReporters: ['text-summary', 'lcov'],
   collectCoverageFrom: [
     'src/**/*.ts',
-    '!src/**/*.d.ts',
-    '!src/index.ts',
-    '!src/bin/**',
+    // El entrypoint es el 100% de la superficie publicada: antes quedaba fuera
+    // de la medicion y el numero alto correspondia a codigo inalcanzable.
+    'bin/**/*.ts',
+    '!**/*.d.ts',
+    '!legacy/**',
   ],
+  // Umbral de ratchet. Los valores de partida son la cobertura real medida el
+  // 2026-10-09 (20,23% stmts / 15,49% branches / 19,82% funcs / 21,17% lines) una
+  // vez corregido `roots`: el 58% anterior medía codigo inalcanzable y archivos
+  // que los tests importaban, no la superficie publicada.
+  // Objetivo: 60% de los modulos vivos (bin/cli.ts incluido) y subir el umbral en
+  // cada PR que agregue cobertura.
+  coverageThreshold: {
+    global: {
+      statements: 19,
+      branches: 14,
+      functions: 18,
+      lines: 20,
+    },
+  },
 
   // -- Mocks y setup -----------------------------------------------------------
   // No usar setupFiles para no agregar overhead
@@ -84,7 +99,4 @@ module.exports = {
   moduleNameMapper: {
     '^chalk$': '<rootDir>/tests/__mocks__/chalk.js',
   },
-
-  // -- Roots -------------------------------------------------------------------
-  roots: ['<rootDir>/tests'],
 };

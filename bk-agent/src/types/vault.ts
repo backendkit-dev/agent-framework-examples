@@ -1,1 +1,0 @@
-export interface PatternMatch { path: string; content: string; relevance: number; trigger: string; }

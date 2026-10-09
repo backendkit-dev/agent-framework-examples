@@ -11,48 +11,13 @@ import chalk from 'chalk';
 import { highlight as cliHighlight, supportsLanguage } from 'cli-highlight';
 import { theme } from './theme';
 import { sanitizeCodeOutput } from '../shared/utils/encoding';
+import { stripTerminalEscapes } from '../shared/utils/sanitize-terminal';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const TOOL_ICONS: Record<string, string> = {
-  read_file: '◌',
-  write_file: '◈',
-  list_directory: '◫',
-  execute_command: '◎',
-  ripgrep_search: '◉',
-  git_diff: '◐',
-  vault_search: '◑',
-  save_to_vault: '◒',
-};
-
 // Strip ANSI escape codes for length calculation
 function visible(s: string): string {
-  // eslint-disable-next-line no-control-regex
   return s.replace(/\x1b\[[0-9;]*m/g, '');
-}
-
-function padRight(s: string, len: number): string {
-  const vlen = visible(s).length;
-  return s + ' '.repeat(Math.max(0, len - vlen));
-}
-
-function wrapText(text: string, maxWidth: number): string[] {
-  if (maxWidth <= 0) return [text];
-  if (text.length <= maxWidth) return [text];
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let current = '';
-  for (const word of words) {
-    const next = current ? current + ' ' + word : word;
-    if (next.length <= maxWidth) {
-      current = next;
-    } else {
-      if (current) lines.push(current);
-      current = word.length > maxWidth ? word.slice(0, maxWidth - 1) + '…' : word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines.length > 0 ? lines : [''];
 }
 
 /**
@@ -111,15 +76,12 @@ export function formatToolCall(name: string, argsStr: string): string {
  * en la terminal. Trunca a 8 líneas y 120 columnas para evitar saturar
  * la pantalla con resultados extensos.
  */
-// Matches all VT100/ANSI escape sequences: SGR colors, cursor movement,
-// erase codes (\x1b[K), cursor hide (\x1b[?25l), etc.
-// eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
-
+// Todas las secuencias de escape (CSI, OSC —incluye OSC 52 → portapapeles—, DCS
+// y escapes cortos) se eliminan con el helper compartido y testeado.
+// Antes era solo /\\x1b\\[[0-9;?]*[A-Za-z]/, que dejaba pasar OSC.
 export function formatToolResult(result: string): string {
-  // Strip ANSI codes and <recap> tags (agents sometimes embed them in tool args/results)
-  const clean = result
-    .replace(ANSI_RE, '')
+  // Strip ANSI/OSC codes and <recap> tags (agents sometimes embed them in tool args/results)
+  const clean = stripTerminalEscapes(result)
     .replace(/<recap>[\s\S]*?<\/recap>/g, '')
     .trimEnd();
   if (!clean) return chalk.hex(theme.colors.textDim)('  \u23BF  (no content)');
@@ -222,7 +184,9 @@ export function extractProjectName(contextMarkdown: string): string {
 
 export interface HeaderInfo {
   model: string;
-  vaultConnected: boolean;
+  /** El vault de Obsidian no esta implementado en el CLI: se mantiene opcional
+   *  para no mostrar un estado que nunca puede ser verdadero. */
+  vaultConnected?: boolean;
   vaultName?: string;
   projectName?: string;
   memoryProject?: string;
@@ -280,10 +244,14 @@ export function formatHeader(info: HeaderInfo): string {
   const line2Parts = [projectLabel, modelLabel, agentLabel];
 
   // Line 3: cwd \u00B7 vault \u00B7 counts \u00B7 memory project
-  const vaultLabel = vaultConnected
+  // El vault no esta implementado en el CLI: si el consumidor no informa el
+  // estado (undefined) no se muestra nada, en vez de un "sin vault" permanente.
+  const vaultLabel = vaultConnected === true
     ? chalk.hex(theme.colors.success)('\uD83D\uDCDA ') + chalk.hex(theme.colors.success)(vaultName || 'vault')
-    : chalk.hex(theme.colors.textDim)('\u25CB sin vault');
-  const line3Parts: string[] = [chalk.hex(theme.colors.textDim)(shortCwd(activeCwd)), vaultLabel];
+    : vaultConnected === false
+      ? chalk.hex(theme.colors.textDim)('\u25CB sin vault')
+      : '';
+  const line3Parts: string[] = [chalk.hex(theme.colors.textDim)(shortCwd(activeCwd)), vaultLabel].filter(Boolean);
   if (skillsCount > 0) line3Parts.push(chalk.hex(theme.colors.textDim)(skillsCount + ' skill' + (skillsCount > 1 ? 's' : '')));
   if (customAgentsCount > 0) line3Parts.push(chalk.hex(theme.colors.textDim)(customAgentsCount + ' agente' + (customAgentsCount > 1 ? 's' : '') + ' custom'));
   if (memoryProject) {
@@ -316,9 +284,6 @@ export function formatHeader(info: HeaderInfo): string {
 export function formatDiff(oldCode: string, newCode: string): string {
   const oldLines = oldCode.split('\n');
   const newLines = newCode.split('\n');
-
-  const removed: Set<number> = new Set();
-  const added: Set<number> = new Set();
 
   // Diff LCS línea a línea usando índices de new/old
   const lcs = computeLCS(oldLines, newLines);
@@ -532,7 +497,7 @@ function highlightLine(line: string, lang: string): string {
     }
 
     // Números (enteros y flotantes)
-    if (/[0-9]/.test(line[i]) && (i === 0 || /[\s(,=[<+\-*\/%!|&^~?:;]/.test(line[i - 1]))) {
+    if (/[0-9]/.test(line[i]) && (i === 0 || /[\s(,=[<+\-*/%!|&^~?:;]/.test(line[i - 1]))) {
       let end = i;
       if (line[end] === '0' && (line[end + 1] === 'x' || line[end + 1] === 'X')) {
         end += 2;
@@ -630,7 +595,7 @@ function formatTable(tableLines: string[]): string | null {
   for (let ri = 0; ri < rows.length; ri++) {
     const isHeader = headerEnd > 0 ? ri < headerEnd : ri === 0;
     const rowCells = rows[ri].map(c => truncate(c, colW));
-    const line = '  ' + rowCells.map((c, ci) => {
+    const line = '  ' + rowCells.map((c) => {
       const cell = c.padEnd(colW);
       return isHeader ? chalk.bold(cell) : chalk.hex(theme.colors.textDim)(cell);
     }).join(chalk.dim('  ·  '));
@@ -645,18 +610,22 @@ function formatTable(tableLines: string[]): string | null {
 }
 
 export function formatMarkdown(text: string): string {
+  // El texto viene del modelo (o de archivos del repo): es entrada NO confiable.
+  // Se eliminan secuencias ANSI/OSC antes de segmentar, porque `chalk` no las filtra
+  // y una OSC 52 permitiria escribir el portapapeles del usuario.
+  const safeText = stripTerminalEscapes(text);
   // Split on fenced code blocks to handle them separately
   const segments: Array<{ type: 'text' | 'code'; content: string; lang: string }> = [];
   const codeRe = /```(\w*)\n([\s\S]*?)```/g;
   let last = 0;
   let m: RegExpExecArray | null;
 
-  while ((m = codeRe.exec(text)) !== null) {
-    if (m.index > last) segments.push({ type: 'text', content: text.slice(last, m.index), lang: '' });
+  while ((m = codeRe.exec(safeText)) !== null) {
+    if (m.index > last) segments.push({ type: 'text', content: safeText.slice(last, m.index), lang: '' });
     segments.push({ type: 'code', content: m[2], lang: m[1] });
     last = m.index + m[0].length;
   }
-  if (last < text.length) segments.push({ type: 'text', content: text.slice(last), lang: '' });
+  if (last < safeText.length) segments.push({ type: 'text', content: safeText.slice(last), lang: '' });
 
   return segments.map(seg => {
     if (seg.type === 'code') {

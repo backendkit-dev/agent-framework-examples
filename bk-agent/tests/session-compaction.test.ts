@@ -1,4 +1,4 @@
-﻿/**
+/**
  * TASK-06 — sesion-actual.md size limit + auto-compaction
  * Verifica que updateSessionMemory compacta el archivo cuando supera 8KB.
  */

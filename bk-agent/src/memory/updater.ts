@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { MemoryContext } from '../bootstrap/memory-loader';
 import { readFileSafeAsync, writeFileSafeAsync } from '../shared/utils/encoding';
-import { createCheckpoint, listCheckpoints, readCheckpoint, compactSession, compactSessionContent, CheckpointSummary } from '@backendkit-labs/agent-core';
+import { createCheckpoint, listCheckpoints, readCheckpoint, compactSession, CheckpointSummary } from '@backendkit-labs/agent-core';
 export { createCheckpoint, listCheckpoints, readCheckpoint, compactSession };
 export type { CheckpointSummary };
 
@@ -58,8 +58,7 @@ export async function readWorkspaceMemory(projectBaseDir: string, name: string):
     try { projectContext = await fs.readFile(path.join(memoryDir, 'contexto-proyecto.md'), 'utf-8'); } catch { }
     return { sessionContent, projectContext };
 }
-import { getLocalProjectsBaseDir, getProjectMemoryDir, cwdToProjectKey, listLocalProjects } from '../bootstrap/memory-loader';
-import * as os from 'os';
+import { getProjectMemoryDir, listLocalProjects } from '../bootstrap/memory-loader';
 
 const SESSION_MAX_BYTES = 8192;
 

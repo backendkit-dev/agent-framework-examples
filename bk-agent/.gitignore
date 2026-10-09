@@ -1,0 +1,10 @@
+# Artefactos generados por el propio agente / toolchain
+coverage/
+*.tsbuildinfo
+.audit-seed-*.txt
+jest-audit-run.log
+
+# Salida del toolchain (el .gitignore raiz ya cubre node_modules/ y dist/)
+dist/
+node_modules/
+*.log

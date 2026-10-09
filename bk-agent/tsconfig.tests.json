@@ -1,0 +1,23 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "noEmit": true,
+        "declaration": false,
+        "declarationMap": false,
+        "sourceMap": false,
+        "types": [
+            "node",
+            "jest"
+        ]
+    },
+    "include": [
+        "tests/**/*",
+        "src/**/*",
+        "bin/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "legacy"
+    ]
+}

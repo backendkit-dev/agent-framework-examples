@@ -1,4 +1,4 @@
-﻿import * as readline from 'readline';
+import * as readline from 'readline';
 import chalk from 'chalk';
 import { theme } from './theme';
 import { MessageBuffer, BufferMessage } from './message-buffer';
@@ -8,10 +8,9 @@ import { copyToClipboard } from './clipboard';
 import { saveToStash, loadStash } from './prompt-stash';
 import { WavesAnimation, AnimationType, AnimationConfig } from '@backendkit-labs/console-animations';
 import { getCompletionSuggestions } from '../commands/slash-registry';
+import { sanitizeSingleLine } from '../shared/utils/sanitize-terminal';
 
 const sep = () => chalk.hex(theme.colors.border)('─'.repeat(process.stdout.columns || 80));
-const FOOTER = () =>
-    sep();
 
 const FOOTER_FRAMES = ['◆', '◈', '◇', '◈', '◆', '◈', '◇', '◈'];
 
@@ -667,19 +666,27 @@ export class Terminal {
      * línea actual para que el spinner de métricas sea visible durante tool calls.
      */
     updateStatusLine(text: string): void {
-        this.statusText = text;
-        if (text) this.footerFrameIdx++;
+        // El texto puede venir del modelo (primer renglon de la respuesta): se
+        // limpian escapes y saltos de linea para que no rompa ni falsifique el footer.
+        const safeText = sanitizeSingleLine(text ?? '');
+        this.statusText = safeText;
+        if (safeText) this.footerFrameIdx++;
         if (this.footerShown) {
             // Cursor está en la línea ❯ (abajo). Subir 1 al footer, limpiar,
             // escribir nuevo footer, bajar de vuelta a la línea ❯.
             process.stdout.write('\x1b[1A\r\x1b[2K' + this.buildFooter() + '\x1b[1B\r');
-        } else if (text) {
+        } else if (safeText) {
             // Sin prompt: mostrar estado inline con \r para no avanzar línea.
             // El spinner de tool calls (startWithMetrics) usa este modo.
+            // Con stdout redirigido (no TTY) no se emiten secuencias de cursor.
             const cols = process.stdout.columns || 80;
-            const plain = text.slice(0, cols - 4);
+            const plain = safeText.slice(0, cols - 4);
             const icon = FOOTER_FRAMES[this.footerFrameIdx % FOOTER_FRAMES.length];
-            process.stdout.write('\r\x1b[2K' + chalk.hex(theme.colors.info)(icon) + ' ' + chalk.hex(theme.colors.textDim)(plain));
+            if (process.stdout.isTTY) {
+                process.stdout.write('\r\x1b[2K' + chalk.hex(theme.colors.info)(icon) + ' ' + chalk.hex(theme.colors.textDim)(plain));
+            } else {
+                process.stdout.write(icon + ' ' + plain + '\n');
+            }
             this.inlineStatusActive = true;
         } else if (this.inlineStatusActive) {
             // Limpiar línea inline cuando el spinner termina

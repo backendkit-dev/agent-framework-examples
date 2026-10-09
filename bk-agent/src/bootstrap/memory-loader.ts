@@ -1,6 +1,7 @@
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { writeFileSafeAsync } from '../shared/utils/encoding';
 
 export interface MemoryContext {
     activeProject: string;
@@ -55,9 +56,15 @@ export function getGlobalAgentsDir(): string {
     return path.join(home, '.bk-agent', 'agents');
 }
 
+/**
+ * @description Directorio global de skills. Debe coincidir con la capa que
+ * carga el motor del framework (`<frameworkDir>/skills/global`), o los skills
+ * que el usuario crea desde `/skills` nunca llegan al modelo.
+ * Ver @backendkit-labs/agent-core → skills/loader (loadGlobalSkills).
+ */
 export function getGlobalSkillsDir(): string {
     const home = process.env.USERPROFILE ?? process.env.HOME ?? os.homedir();
-    return path.join(home, '.bk-agent', 'skills');
+    return path.join(home, '.bk-agent', 'skills', 'global');
 }
 
 export interface LocalProjectInfo {
@@ -163,12 +170,14 @@ async function initLocalMemoryFiles(localDir: string, projectName: string): Prom
     await fs.mkdir(path.join(localDir, '..', 'audits'), { recursive: true });
 
     const sesionFile = path.join(localDir, SESSION_FILE);
+    // writeFileSafeAsync escribe de forma atomica (tmp unico + rename): un crash
+    // a mitad de escritura no deja la memoria del proyecto truncada.
     try { await fs.access(sesionFile); }
-    catch { await fs.writeFile(sesionFile, buildLocalSessionTemplate(projectName, date), 'utf-8'); }
+    catch { await writeFileSafeAsync(sesionFile, buildLocalSessionTemplate(projectName, date)); }
 
     const ctxFile = path.join(localDir, CONTEXT_FILE);
     try { await fs.access(ctxFile); }
-    catch { await fs.writeFile(ctxFile, buildLocalContextTemplate(projectName, date), 'utf-8'); }
+    catch { await writeFileSafeAsync(ctxFile, buildLocalContextTemplate(projectName, date)); }
 }
 
 function buildLocalSessionTemplate(projectName: string, date: string): string {

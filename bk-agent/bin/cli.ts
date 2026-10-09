@@ -8,6 +8,7 @@ import {
     ConfigLoader,
     AgentLoader,
     CODING_AGENTS,
+    CODING_TOOLS,
     type ProvidersConfig,
 } from '@backendkit-labs/agent-coding';
 import {
@@ -25,7 +26,6 @@ import {
     type AgentProfile,
     type IterationMode,
     type IterationStats,
-    type WorkspacesConfig,
 } from '@backendkit-labs/agent-core';
 
 import { Terminal } from '../src/ui/terminal';
@@ -40,26 +40,30 @@ import {
     formatAgentHeaderCompact,
 
     formatMarkdown,
-    extractProjectName,
     formatFileDiff,
 } from '../src/ui/formatters';
 import { Spinner, type SpinnerMetrics } from '../src/ui/spinner';
-import { registerNestJSHandlers } from '../src/skills/handlers/nestjs';
-import { registerTypeScriptHandlers } from '../src/skills/handlers/typescript';
-import { registerBuiltinHandlers } from '../src/skills/handlers/builtins';
-import { PathAllowlist } from '../src/skills/handlers/path-allowlist';
-import { defaultInstructions } from '../src/types/config';
-import { loadSkills, loadVaultSkills, type Skill, type VaultSkill } from '../src/skills/loader';
+import { decideApproval, decisionFromUserAnswer, requiresAlwaysAsk } from '../src/agent/approval-policy';
+import { setupConsoleEncoding } from '../src/shared/utils/encoding';
+import { sanitizeSingleLine } from '../src/shared/utils/sanitize-terminal';
+import { HeadlessStreamFilter, type HeadlessEmission } from '../src/ui/headless-stream';
+import { applyToolGuards } from '../src/security/apply-tool-guards';
+import { applyExtraApprovals, type EngineWithGate } from '../src/security/apply-extra-approvals';
+import type { ToolDefinitionLike } from '../src/security/tool-guards';
+import {
+    readDesignState,
+    parseQaVerdict,
+    buildQaRunPrompt as buildQARunPrompt,
+    type DesignState,
+} from '../src/spec/design-state';
+import { loadSkills, type Skill } from '../src/skills/loader';
 import {
     listCheckpoints, readCheckpoint, createCheckpoint, compactSession,
 } from '../src/memory/updater';
 import {
-    loadMemoryContext, getGlobalAgentsDir, getGlobalSkillsDir,
+    loadMemoryContext, getGlobalSkillsDir,
     getProjectMemoryDir, type MemoryContext,
 } from '../src/bootstrap/memory-loader';
-
-registerNestJSHandlers();
-registerTypeScriptHandlers();
 
 // ── Model registry (for cost estimates) ──────────────────────────────────────
 
@@ -93,11 +97,6 @@ const DEEPSEEK_MODELS: ModelInfo[] = [
         note: 'Experto · Razonamiento, matematicas, problemas complejos',
     },
 ];
-
-function buildBar(pct: number, width = 20): string {
-    const filled = Math.round((pct / 100) * width);
-    return chalk.green('█'.repeat(filled)) + chalk.dim('░'.repeat(width - filled));
-}
 
 function buildHelpText(skills: Skill[]): string {
     const lines = [
@@ -150,11 +149,13 @@ program
     .option('--max-iterations <n>', 'Max iteraciones de herramientas por turno', '100')
     .option('--iteration-mode <mode>', 'Modo de iteracion: interactive | auto | step-by-step', 'step-by-step')
     .option('--command-timeout <s>', 'Timeout en segundos para run_command (0 = sin limite)')
-    .option('--no-stream', 'Deshabilitar streaming')
     .option('--no-qa', 'Desactivar revision automatica de QA')
-    .option('--no-delegation', 'Desactivar delegacion a sub-agentes')
     .option('--headless', 'Modo headless: emite JSON-Lines a stdout para frontend externo')
+    .option('--auto-approve', 'PELIGROSO: aprueba automaticamente toda escritura y comando sin confirmar (obligatorio en --headless para permitir mutaciones)')
     .action(async (options) => {
+        // Configura la consola a UTF-8 en Windows (chcp 65001 + encoding de stdio).
+        // Sin esto, PowerShell 5.1 pinta mojibake con los acentos y el box-drawing.
+        setupConsoleEncoding();
         agentEvents.init(!!options.headless);
 
         // ── API key ───────────────────────────────────────────────────────────
@@ -192,7 +193,6 @@ program
 
         const cwd = process.cwd();
         const maxIterations = parseInt(options.maxIterations as string, 10) || 100;
-        const useStream = options.stream !== false;
         const iterationMode = (options.iterationMode as string) || 'interactive';
         const validModes: IterationMode[] = ['interactive', 'auto', 'step-by-step'];
         const resolvedMode: IterationMode = validModes.includes(iterationMode as IterationMode)
@@ -204,6 +204,8 @@ program
         let currentModel = (providers[defaultProvider] as any)?.model ?? options.model ?? 'deepseek-chat';
         let running = false;
         let allowAll = false;
+        // Evita repetir el aviso de "mutacion denegada" en cada tool call de headless.
+        let autoApproveWarned = false;
         let pendingInput: string | null = null;
         let pendingContext: string | null = null;
         // Quiet flag for spec.go autonomous loop — suppresses full response text,
@@ -213,7 +215,6 @@ program
         // Workspace B+ state
         let activeWorkspaceName: string | null = null;
         let activeAppPath: string = cwd;
-        const rootCtx = { current: cwd };  // mutable projectRoot for builtin handlers
 
         const sessionStats = { calls: 0, inputTokens: 0, outputTokens: 0 };
         const liveMetrics: SpinnerMetrics = {
@@ -226,19 +227,23 @@ program
 
         // Response buffer — tokens accumulate here, rendered as Markdown on block_end
         let agentResponseBuffer = '';
-        // Streaming recap filter state (kept for headless mode)
-        let streamTail = '';
-        let suppressingRecap = false;
-        let recapBuffer = '';
+        // Spinner label: se calcula de forma incremental (ver caso 'token') para
+        // evitar re-dividir el buffer completo en cada token (era O(n^2)).
+        let spinnerLabelChunk = '';
+        let spinnerLabelDone = false;
+        const SPINNER_LABEL_MAX_CHARS = 512;
+        // Filtro del stream de tokens para headless (separa <recap> del texto).
+        // La logica vive en src/ui/headless-stream.ts y esta cubierta por tests.
+        let headlessStream = new HeadlessStreamFilter();
 
-        // ── Memory / vault ────────────────────────────────────────────────────
-        let vaultPath = '';
-        let vaultConnected = false;
+        // ── Memory ────────────────────────────────────────────────────────────
+        // El vault de Obsidian no esta implementado en el CLI (no hay comando para
+        // conectarlo): la memoria vive en ~/.deepseek-code/projects/{key}/memory/.
         let projectName = path.basename(cwd);
 
         // Load memory from the current active app path (starts as cwd)
         const loadAppMemory = async (appPath: string): Promise<MemoryContext | null> => {
-            return loadMemoryContext(vaultPath, getProjectMemoryDir(appPath), path.basename(appPath));
+            return loadMemoryContext('', getProjectMemoryDir(appPath), path.basename(appPath));
         };
         let memoryContext: MemoryContext | null = await loadAppMemory(cwd);
 
@@ -253,6 +258,9 @@ program
         const spinner = new Spinner();
         const { MessageBuffer } = await import('../src/ui/message-buffer');
         const messageBuffer = new MessageBuffer();
+        // Se asigna una sola vez, en el setup de la TUI, despues de definir los
+        // handlers que la cierran por referencia: `const` no es viable aqui.
+        // eslint-disable-next-line prefer-const
         let terminal!: Terminal;
         let updateHeaderCallback: () => void = () => {};
 
@@ -263,8 +271,6 @@ program
                 : undefined;
             return {
                 model: currentModel,
-                vaultConnected,
-                vaultName: vaultPath ? path.basename(vaultPath) : undefined,
                 projectName,
                 memoryProject: memoryContext?.activeProject,
                 memorySource: memoryContext?.source,
@@ -296,37 +302,23 @@ program
         }
 
         // ── Transport event handler ───────────────────────────────────────────
+        /** Emite al frontend las emisiones del filtro de stream headless. */
+        function emitHeadless(emissions: HeadlessEmission[]): void {
+            for (const emission of emissions) {
+                if (emission.type === 'token') {
+                    agentEvents.emit({ type: 'token', content: emission.content });
+                } else {
+                    agentEvents.emit({ type: 'recap', text: emission.text } as any);
+                }
+            }
+        }
+
         function handleEvent(event: AgentEvent): void {
             // Headless: pass through all framework events directly
             if (agentEvents.isHeadless()) {
                 switch (event.type) {
                     case 'token': {
-                        if (suppressingRecap) {
-                            recapBuffer += event.content;
-                            const endIdx = recapBuffer.indexOf('</recap>');
-                            if (endIdx !== -1) {
-                                const recap = recapBuffer.slice(0, endIdx).trim();
-                                suppressingRecap = false;
-                                recapBuffer = '';
-                                if (recap) agentEvents.emit({ type: 'recap', text: recap } as any);
-                            }
-                            return;
-                        }
-                        streamTail += event.content;
-                        const idx = streamTail.indexOf('<recap>');
-                        if (idx !== -1) {
-                            const before = streamTail.slice(0, idx);
-                            if (before) agentEvents.emit({ type: 'token', content: before });
-                            suppressingRecap = true;
-                            recapBuffer = streamTail.slice(idx + 7);
-                            streamTail = '';
-                            return;
-                        }
-                        const safe = Math.max(0, streamTail.length - 8);
-                        if (safe > 0) {
-                            agentEvents.emit({ type: 'token', content: streamTail.slice(0, safe) });
-                            streamTail = streamTail.slice(safe);
-                        }
+                        emitHeadless(headlessStream.push(event.content));
                         return;
                     }
                     case 'metrics':
@@ -340,8 +332,7 @@ program
                         agentEvents.emit(event);
                         return;
                     case 'done':
-                        if (streamTail && !suppressingRecap) agentEvents.emit({ type: 'token', content: streamTail });
-                        streamTail = '';
+                        emitHeadless(headlessStream.flush());
                         agentEvents.emit(event);
                         return;
                     default:
@@ -356,14 +347,26 @@ program
                     // Accumulate for formatted rendering on block_end
                     agentResponseBuffer += event.content;
                     // Update spinner label with the first meaningful line so the user
-                    // sees what the agent is generating without verbose raw streaming
-                    const firstLine = agentResponseBuffer
-                        .split('\n')[0]
-                        .replace(/\*\*/g, '')
-                        .replace(/^#+\s*/, '')
-                        .trim();
-                    if (firstLine.length > 5) {
-                        spinner.update(firstLine.length > 75 ? firstLine.slice(0, 72) + '…' : firstLine);
+                    // sees what the agent is generating without verbose raw streaming.
+                    // El label se deriva de un acumulador corto (primeros SPINNER_LABEL_MAX_CHARS
+                    // caracteres o hasta el primer salto de linea) en lugar de re-dividir el
+                    // buffer completo en cada token, que hacia la UI O(n^2) en respuestas largas.
+                    if (!spinnerLabelDone) {
+                        spinnerLabelChunk += event.content;
+                        if (spinnerLabelChunk.length >= SPINNER_LABEL_MAX_CHARS || spinnerLabelChunk.includes('\n')) {
+                            spinnerLabelDone = true;
+                        }
+                        const firstLine = spinnerLabelChunk
+                            .split('\n')[0]
+                            .replace(/\*\*/g, '')
+                            .replace(/^#+\s*/, '')
+                            .trim();
+                        if (firstLine.length > 5) {
+                            // sanitizeSingleLine evita que un \r o un escape del modelo
+                            // rompa o falsifique la linea del footer.
+                            const label = sanitizeSingleLine(firstLine);
+                            spinner.update(label.length > 75 ? label.slice(0, 72) + '…' : label);
+                        }
                     }
                     return;
                 }
@@ -386,6 +389,8 @@ program
                         );
                     }
                     agentResponseBuffer = '';
+                    spinnerLabelChunk = '';
+                    spinnerLabelDone = false;
                     const argsStr = event.args_preview ?? '';
                     messageBuffer.add({ role: 'tool', content: `${event.name}(${argsStr.slice(0, 60)})`, timestamp: new Date(), meta: event.name });
 
@@ -440,9 +445,8 @@ program
                     spinner.stop();
                     terminal?.prepareForOutput();
                     agentResponseBuffer = '';
-                    streamTail = '';
-                    suppressingRecap = false;
-                    recapBuffer = '';
+                    spinnerLabelChunk = '';
+                    spinnerLabelDone = false;
                     const cur = allAgents.find(a => a.id === event.agent_id);
                     const agentIcon = event.agent_icon ?? cur?.icon ?? '◆';
                     const agentName = event.agent_name ?? cur?.name ?? event.agent_id;
@@ -461,7 +465,6 @@ program
                     spinner.stop();
                     let text = agentResponseBuffer;
                     agentResponseBuffer = '';
-                    streamTail = '';
                     // Extract ALL <recap> blocks — agents (orchestrator + sub-agents) may
                     // each add one. Remove all from displayed text and show only the last
                     // (most complete summary), deduplicated.
@@ -505,7 +508,6 @@ program
                         console.log(formatMarkdown(agentResponseBuffer));
                         agentResponseBuffer = '';
                     }
-                    streamTail = '';
                     return;
                 }
                 case 'error': {
@@ -537,6 +539,39 @@ program
             messageBuffer.add({ role: 'system', content: `※ recap: ${recap}`, timestamp: new Date(), meta: 'recap' });
             const preview = recap.length > 120 ? recap.slice(0, 117) + '…' : recap;
             process.stdout.write(chalk.dim('  ※  ') + chalk.dim.italic(preview) + '\n');
+        }
+
+        // ── Endurecimiento de las tools de archivos ───────────────────────────
+        // Hallazgos A-1 y A-2 de la auditoria: el sandbox de rutas del framework es
+        // lexico (un junction/symlink sale del proyecto) y read_file no distingue
+        // archivos con credenciales. `createCodingEngine` pasa `tools: CODING_TOOLS`
+        // por referencia a createBaseEngine y no hay API para inyectar tools
+        // (hallazgo N-8), asi que se sustituyen las definiciones **antes** de crear
+        // el engine. Es una medida temporal: se retira cuando el framework acepte
+        // `tools`/`extraTools` (ver docs/auditorias/remediacion-v1.0.0.md).
+        const toolGuards = applyToolGuards(CODING_TOOLS as unknown as ToolDefinitionLike[], {
+            onSensitiveRead: async (sensitivePath: string) => {
+                // En headless se deniega salvo --auto-approve, igual que el resto de
+                // operaciones con impacto.
+                if (agentEvents.isHeadless()) return !!options.autoApprove;
+                terminal?.stopThinking();
+                spinner.stop();
+                const answer = await terminal.confirm(`Leer archivo sensible: ${sensitivePath}?`);
+                return answer !== 'no';
+            },
+            log: (message) => {
+                if (!agentEvents.isHeadless()) console.error(chalk.dim('  ' + message));
+            },
+        });
+        if (toolGuards.missing.length > 0) {
+            // Nunca en silencio: si el framework cambia su lista de tools, el guard
+            // deja de aplicarse y hay que enterarse.
+            const warning = `Guards de archivos no aplicados a: ${toolGuards.missing.join(', ')}`;
+            if (agentEvents.isHeadless()) {
+                agentEvents.emit({ type: 'system', level: 'warn', text: warning } as any);
+            } else {
+                console.warn(chalk.yellow(`⚠️  ${warning}`));
+            }
         }
 
         // ── Engine factory ────────────────────────────────────────────────────
@@ -579,23 +614,74 @@ program
                 return result !== 'no';
             },
             onToolApproval: async (toolName: string, agentId: string, argsPreview: string) => {
-                if (agentEvents.isHeadless()) return 'approve';
-                if (allowAll) return 'approve_all';
+                const decision = decideApproval({
+                    headless: agentEvents.isHeadless(),
+                    autoApprove: !!options.autoApprove,
+                    toolName,
+                    argsPreview,
+                    allowAll,
+                });
+
+                if (decision === 'reject') {
+                    // Fail-closed en headless: se avisa una sola vez por sesion y se
+                    // deniega. El frontend puede relanzar con --auto-approve.
+                    if (!autoApproveWarned) {
+                        autoApproveWarned = true;
+                        agentEvents.emit({
+                            type: 'system',
+                            level: 'warn',
+                            text: `Mutacion denegada (${toolName}): el modo headless no escribe ni ejecuta sin --auto-approve.`,
+                        } as any);
+                    }
+                    return 'reject';
+                }
+                if (decision !== 'ask') return decision;
+
                 terminal?.stopThinking();
                 spinner.stop();
+                const alwaysAsk = requiresAlwaysAsk(toolName, argsPreview);
                 const result = await terminal.confirm(`${agentId} → ${toolName}(${argsPreview.slice(0, 60)})`);
-                if (result === 'all') { allowAll = true; return 'approve_all'; }
-                return result !== 'no' ? 'approve' : 'reject';
+                const answer = result === 'all' ? 'all' : result === 'no' ? 'no' : 'yes';
+                const resolved = decisionFromUserAnswer(answer, alwaysAsk);
+                if (resolved.allowAll) allowAll = true;
+                return resolved.decision;
             },
         });
         engine.setIterationMode(resolvedMode);
 
+        // ── Aprobaciones extra (hallazgo M-7) ─────────────────────────────────
+        // `ApprovalGate` solo cubre write_file/edit_file/run_command, asi que las
+        // tools de los servidores MCP (docker, design, curator…) y las de estado
+        // del framework (save_context, update_session…) se ejecutaban sin
+        // preguntar. Se envuelve `approvalGate.check`, que es el paso obligado de
+        // toda tool call. No se pregunta por las MCP marcadas readOnlyHint ni en
+        // modo `auto` (el framework deja el gate desactivado).
+        const extraApprovals = applyExtraApprovals(engine as unknown as EngineWithGate, {
+            onApproval: async (toolName: string, argsPreview: string) => {
+                if (agentEvents.isHeadless()) return !!options.autoApprove;
+                terminal?.stopThinking();
+                spinner.stop();
+                const answer = await terminal.confirm(`Ejecutar ${toolName}(${argsPreview.slice(0, 60)})?`);
+                return answer !== 'no';
+            },
+            log: (message) => {
+                if (!agentEvents.isHeadless()) console.error(chalk.dim('  ' + message));
+            },
+        });
+        if (!extraApprovals.applied) {
+            const warning = `Aprobaciones extra no aplicadas: ${extraApprovals.reason}`;
+            if (agentEvents.isHeadless()) {
+                agentEvents.emit({ type: 'system', level: 'warn', text: warning } as any);
+            } else {
+                console.warn(chalk.yellow(`⚠️  ${warning}`));
+            }
+        }
+
         // ── Run helper ────────────────────────────────────────────────────────
         async function runEngine(input: string): Promise<void> {
             running = true;
-            streamTail = '';
-            suppressingRecap = false;
-            recapBuffer = '';
+            // Estado del filtro headless limpio por turno.
+            headlessStream = new HeadlessStreamFilter();
             try {
                 const effectiveInput = pendingContext
                     ? `## Contexto inyectado\n${pendingContext}\n\n${input}`
@@ -603,12 +689,21 @@ program
                 pendingContext = null;
                 await engine.run(effectiveInput);
             } finally {
+                // El timer de "thinking" solo se limpiaba en stopThinking(); si el
+                // engine lanzaba, quedaba un setInterval eterno escribiendo al footer
+                // y manteniendo vivo el proceso.
+                terminal?.stopThinking();
+                spinner.stop();
                 running = false;
             }
         }
 
         // ── Initial header ────────────────────────────────────────────────────
-        console.log(formatHeader(buildHeaderInfo()));
+        // En headless stdout es un protocolo JSON-Lines: el header ASCII lo
+        // rompia (el frontend recibia lineas no-JSON antes del primer evento).
+        if (!agentEvents.isHeadless()) {
+            console.log(formatHeader(buildHeaderInfo()));
+        }
 
         // ── Slash command registry ────────────────────────────────────────────
         const cmdRegistry = new SlashCommandRegistry();
@@ -661,7 +756,6 @@ program
             const lines = [
                 `Agente:   ${cur ? cur.name + ' (' + currentAgentId + ')' : currentAgentId}`,
                 `Modelo:   ${currentModel}`,
-                `Vault:    ${vaultConnected ? 'conectado' : 'no conectado'}`,
                 `Skills:   ${allSkills.length} instalados`,
                 `Agentes:  ${allAgents.length} perfiles`,
                 `Tokens sesion: entrada ${sessionStats.inputTokens.toLocaleString()} · salida ${sessionStats.outputTokens.toLocaleString()}`,
@@ -789,20 +883,6 @@ program
 
         // ── Headless mode ─────────────────────────────────────────────────────
         if (agentEvents.isHeadless()) {
-            const headlessAllowlist = new PathAllowlist({
-                allowedPaths: [cwd, vaultPath, (await import('os')).tmpdir()].filter(Boolean),
-                allowSubpaths: true,
-            });
-            registerBuiltinHandlers({
-                vaultPath,
-                instructions: defaultInstructions(),
-                askConfirmation: async () => true,
-                get projectRoot() { return rootCtx.current; },
-                memoryContext,
-                onMemoryUpdate: null,
-                pathAllowlist: headlessAllowlist,
-            });
-
             agentEvents.emit({ type: 'ready' });
 
             const emitConfig = async () => {
@@ -828,9 +908,7 @@ program
 
             // Called by /workspace switch and /switch when the active project changes
             const headlessOnCwdChange = async (newCwd: string): Promise<void> => {
-                rootCtx.current = newCwd;
                 activeAppPath = newCwd;
-                headlessAllowlist.addPath(newCwd);
                 const wsConfig = await loadWorkspaces('bk-agent');
                 let activeWsEntry: (typeof wsConfig)[string] | undefined;
                 for (const [wsName, wsEntry] of Object.entries(wsConfig)) {
@@ -842,7 +920,6 @@ program
                 }
                 // Use commonRoot as workingDir when workspace spans multiple projects
                 const effectiveDir = activeWsEntry?.commonRoot ?? newCwd;
-                headlessAllowlist.addPath(effectiveDir);
                 engine.updateWorkingDir(effectiveDir);
                 memoryContext = await loadAppMemory(newCwd);
                 projectName = path.basename(newCwd);
@@ -924,12 +1001,6 @@ program
 
         // ── Terminal (TUI) overrides ──────────────────────────────────────────
 
-        // Mutable allowlist for TUI mode — addPath() called on workspace/app switch
-        const tuiAllowlist = new PathAllowlist({
-            allowedPaths: [cwd, vaultPath, (await import('os')).tmpdir()].filter(Boolean),
-            allowSubpaths: true,
-        });
-
         const showHeader = () => {
             console.clear();
             process.stdout.write(formatHeader(buildHeaderInfo()));
@@ -1010,7 +1081,6 @@ program
                 '',
                 chalk.dim('Agente:') + '  ' + (cur ? chalk.cyan(cur.icon + ' ' + cur.name + ' (' + currentAgentId + ')') : chalk.cyan(currentAgentId)),
                 chalk.dim('Modelo:') + '  ' + chalk.cyan(currentModel),
-                chalk.dim('Vault:') + '  ' + (vaultConnected ? chalk.green('✓ ' + path.basename(vaultPath)) : chalk.dim('✗ no conectado')),
                 chalk.dim('Skills:') + '  ' + chalk.cyan(String(allSkills.length)) + chalk.dim(' instalados'),
                 chalk.dim('Agentes:') + '  ' + chalk.cyan(String(allAgents.length)) + chalk.dim(' perfiles'),
                 '',
@@ -1046,15 +1116,9 @@ program
         });
 
         cmdRegistry.register('/skills', 'Ver, instalar o crear skills', async () => {
-            const vaultSkills: VaultSkill[] = vaultPath ? await loadVaultSkills(vaultPath) : [];
-            const installedNames = new Set(allSkills.map(s => s.name));
-            const availableVault = vaultSkills.filter(vs => !installedNames.has(vs.name));
             const menuItems: { label: string; value: string }[] = [];
             for (const s of allSkills) {
                 menuItems.push({ label: chalk.green('✓ ') + chalk.bold(s.name), value: `local:${s.name}` });
-            }
-            for (const vs of availableVault) {
-                menuItems.push({ label: chalk.cyan('✦ ') + chalk.bold(vs.name), value: `vault:${vs.filePath}` });
             }
             if (menuItems.length === 0) {
                 menuItems.push({ label: chalk.dim('(sin skills disponibles)'), value: '__empty__' });
@@ -1204,13 +1268,9 @@ program
             catch { return null; }
         };
 
-        const specReadDesign = (dir: string): any | null => {
-            const fs = require('fs') as typeof import('fs');
-            // Misma derivación que usa el plugin design (DesignStore) — getProjectDir del framework
-            const p = path.join(getProjectDir('bk-agent', dir), 'design.json');
-            if (!fs.existsSync(p)) return null;
-            try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
-        };
+        // Validado y testeado en src/spec/design-state.ts: un design.json corrupto
+        // o incompleto devuelve null en vez de romper el comando con un TypeError.
+        const specReadDesign = (dir: string): DesignState | null => readDesignState(dir);
 
         // Switches to agentId if not already active. Does NOT clear history (design is iterative).
         const specSwitchAgent = (agentId: string): void => {
@@ -1222,29 +1282,6 @@ program
             updateHeaderCallback();
             console.log(formatCommandOutput(chalk.green(`✓ ${profile.icon} ${profile.name} activado`)));
         };
-
-        const buildQARunPrompt = (dir: string, phase: any): string =>
-            `Evalúa la Fase ${phase.number} "${phase.name}" del proyecto en "${dir}".` +
-            `\nEtapa actual: ${phase.stage}.` +
-            `\n` +
-            `\n## Paso 1 — Criterios funcionales` +
-            `\nVerifica cada criterio con evidencia concreta (lee los archivos, ejecuta comandos):` +
-            `\n${(phase.criteria ?? ['ver specification.md']).map((c: string, i: number) => `${i + 1}. ${c}`).join('\n')}` +
-            `\n` +
-            `\n## Paso 2 — Cumplimiento de decisiones de diseño (ADRs)` +
-            `\nLee "${dir}/design.md". Identifica todas las decisiones técnicas: librerías a usar, patrones arquitectónicos, restricciones.` +
-            `\nPara cada decisión que especifique una librería o módulo:` +
-            `\n- Busca con grep/search si esa librería aparece en imports dentro de src/ (no solo en package.json).` +
-            `\n- Si design.md dice "usar X" pero X no aparece en ningún import de src/, eso es una violación grave — VEREDICTO: NO-GO.` +
-            `\n- Muestra evidencia: qué archivos la importan, o confirma que no hay ninguno.` +
-            `\n` +
-            `\n## Reporte final` +
-            `\nGuarda el reporte completo en "${dir}/qa-phase${phase.number}.md" con:` +
-            `\n- Resultado de cada criterio (✅/❌ + evidencia)` +
-            `\n- Resultado de cada ADR verificado (✅/❌ + archivos que lo cumplen o no)` +
-            `\n- Plan de remediación si hay violaciones` +
-            `\n- Última línea: "VEREDICTO: GO" o "VEREDICTO: NO-GO — [razón principal]"` +
-            `\nIMPORTANTE: Solo evalúa — NO llames design_advance, design_next ni design_init.`;
 
         // ── Design phase ─────────────────────────────────────────────────────
 
@@ -1352,7 +1389,7 @@ program
                 if (!p) { console.log(formatCommandOutput(chalk.red(`Fase ${faseNum} no encontrada`))); return; }
                 const icon = p.status === 'complete' ? '✓' : p.status === 'in_progress' ? '◉' : p.status === 'blocked' ? '✗' : '○';
                 const lines = [
-                    `${icon}  Fase ${p.number}/${state.phases.length}: ${p.name}  [${p.status}${p.status === 'in_progress' ? ' / ' + (stageIcon[p.stage] ?? p.stage) : ''}]`,
+                    `${icon}  Fase ${p.number}/${state.phases.length}: ${p.name}  [${p.status}${p.status === 'in_progress' ? ' / ' + (stageIcon[p.stage ?? ''] ?? p.stage) : ''}]`,
                     '',
                     p.description,
                 ];
@@ -1366,10 +1403,10 @@ program
                 const lines = [`${state.project}  [${done}/${total}]`, ''];
                 for (const p of state.phases) {
                     const icon = p.status === 'complete' ? '✓' : p.status === 'in_progress' ? '◉' : p.status === 'blocked' ? '✗' : '○';
-                    const tag  = p.status === 'in_progress' ? `  ${stageIcon[p.stage] ?? p.stage}` : '';
+                    const tag  = p.status === 'in_progress' ? `  ${stageIcon[p.stage ?? ''] ?? p.stage}` : '';
                     lines.push(`  ${icon}  ${p.number}. ${p.name}${tag}`);
                 }
-                if (cur && done < total) lines.push('', `Fase ${cur.number}/${total} — ${stageIcon[cur.stage] ?? cur.stage}`);
+                if (cur && done < total) lines.push('', `Fase ${cur.number}/${total} — ${stageIcon[cur.stage ?? ''] ?? cur.stage}`);
                 else if (done === total) lines.push('', '✅ Todas las fases completas');
                 console.log(formatCommandOutput(lines.join('\n')));
             }
@@ -1461,7 +1498,7 @@ program
             const stageLabel: Record<string, string> = { spec: '📐 SPEC', implement: '🔨 IMPLEMENT', verify: '✅ VERIFY' };
             console.log(formatCommandOutput(
                 chalk.bold(`Fase ${phase.number}/${state.phases.length}: ${phase.name}`) +
-                chalk.dim(`  [${stageLabel[phase.stage] ?? phase.stage}]`),
+                chalk.dim(`  [${stageLabel[phase.stage ?? ''] ?? phase.stage}]`),
             ));
 
             if (phase.stage === 'verify') {
@@ -1653,15 +1690,9 @@ program
                     await runEngine(buildQARunPrompt(dir, verifyPhase));
 
                     // ── Read QA verdict ──────────────────────────────────────────────
-                    let qaVerdict: 'GO' | 'NO-GO' | 'unknown' = 'unknown';
-                    if (fsGo.existsSync(qaFilePath)) {
-                        const qaContent = fsGo.readFileSync(qaFilePath, 'utf8');
-                        if (/VEREDICTO:\s*NO-GO/i.test(qaContent)) {
-                            qaVerdict = 'NO-GO';
-                        } else if (/VEREDICTO:\s*GO/i.test(qaContent)) {
-                            qaVerdict = 'GO';
-                        }
-                    }
+                    // parseQaVerdict comprueba NO-GO antes que GO (la cadena contiene "GO").
+                    const qaContent = fsGo.existsSync(qaFilePath) ? fsGo.readFileSync(qaFilePath, 'utf8') : null;
+                    const qaVerdict = parseQaVerdict(qaContent);
 
                     specSwitchAgent('general');
 
@@ -1771,9 +1802,7 @@ program
 
         // Called by /workspace switch (framework) and /switch (TUI alias) when project changes
         const tuiOnCwdChange = async (newCwd: string): Promise<void> => {
-            rootCtx.current = newCwd;
             activeAppPath = newCwd;
-            tuiAllowlist.addPath(newCwd);
             const wsConfig = await loadWorkspaces('bk-agent');
             let activeWsEntry: (typeof wsConfig)[string] | undefined;
             for (const [wsName, wsEntry] of Object.entries(wsConfig)) {
@@ -1785,7 +1814,6 @@ program
             }
             // Use commonRoot as workingDir when workspace spans multiple projects
             const effectiveDir = activeWsEntry?.commonRoot ?? newCwd;
-            tuiAllowlist.addPath(effectiveDir);
             engine.updateWorkingDir(effectiveDir);
             memoryContext = await loadAppMemory(newCwd);
             projectName = path.basename(newCwd);
@@ -1995,22 +2023,6 @@ program
                     console.log(formatCommandOutput(`Error: ${error.message}`));
                 }
             },
-        });
-
-        // Register builtin skill handlers (for tool execution in terminal mode)
-        registerBuiltinHandlers({
-            vaultPath,
-            instructions: defaultInstructions(),
-            askConfirmation: async (msg: string) => {
-                if (allowAll) return true;
-                const result = await terminal.confirm(msg);
-                if (result === 'all') allowAll = true;
-                return result !== 'no';
-            },
-            get projectRoot() { return rootCtx.current; },
-            memoryContext,
-            onMemoryUpdate: null,
-            pathAllowlist: tuiAllowlist,
         });
 
         // Header redraw callback

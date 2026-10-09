@@ -1,0 +1,60 @@
+name: bk-agent CI
+
+# Solo se dispara con cambios en bk-agent: el repo es un monorepo de ejemplos.
+on:
+  push:
+    paths:
+      - 'bk-agent/**'
+      - '.github/workflows/bk-agent-ci.yml'
+  pull_request:
+    paths:
+      - 'bk-agent/**'
+      - '.github/workflows/bk-agent-ci.yml'
+
+defaults:
+  run:
+    working-directory: bk-agent
+
+jobs:
+  verify:
+    name: verify (utf8 · reachability · typecheck · lint · tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: bk-agent/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Encoding (UTF-8 valido, sin BOM)
+        run: npm run lint:utf8
+
+      - name: Arquitectura (nada inalcanzable en src/)
+        run: npm run check:reachability
+
+      - name: Documentacion (comandos citados existen)
+        run: npm run check:docs
+
+      - name: Typecheck (app + tests)
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests con cobertura y umbral
+        env:
+          COLLECT_COVERAGE: '1'
+        run: npx jest --coverage
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke test del binario
+        run: |
+          node dist/bin/cli.js --version
+          node dist/bin/cli.js --help

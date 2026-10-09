@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @encoding Sistema de encoding seguro para lectura/escritura de archivos.
  *
  * Arquitectura de 5 capas:
@@ -22,6 +22,8 @@ import * as fs from 'fs';
 import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import { Result, ok, fail } from '../result';
+import { atomicWrite, atomicWriteSync } from './atomic-write';
+import { LRUCache } from './lru-cache';
 
 // ── Tipos públicos ──────────────────────────────────────────────────────────
 
@@ -91,7 +93,12 @@ interface CacheEntry {
   mtimeMs: number;
 }
 
-const readCache = new Map<string, CacheEntry>();
+/**
+ * Cache de lectura acotado (LRU). Antes era un `Map` sin limite que guardaba el
+ * contenido COMPLETO de cada archivo leido: en una sesion larga crecia sin techo.
+ */
+const READ_CACHE_MAX_ENTRIES = 200;
+const readCache = new LRUCache<string, CacheEntry>(READ_CACHE_MAX_ENTRIES);
 
 function getCacheKey(filePath: string, optionsKey: string): string {
   return `${filePath}::${optionsKey}`;
@@ -99,11 +106,7 @@ function getCacheKey(filePath: string, optionsKey: string): string {
 
 function invalidateCache(filePath: string): void {
   // Invalida TODAS las entradas de este filePath (con cualquier optionsKey)
-  Array.from(readCache.keys()).forEach(key => {
-    if (key.startsWith(filePath + '::')) {
-      readCache.delete(key);
-    }
-  });
+  readCache.deleteWhere((key) => key.startsWith(filePath + '::'));
 }
 
 // ── Detección de BOM ────────────────────────────────────────────────────────
@@ -284,16 +287,65 @@ function countInvalidUTF8Bytes(buffer: Buffer): number {
 
 // ── Pipeline de fallback ────────────────────────────────────────────────────
 
+/** Decodifica UTF-16LE (opcionalmente con BOM). */
+function decodeUtf16Le(buffer: Buffer): { text: string; encoding: string; hadInvalidBytes: boolean } {
+  const body = buffer.subarray(detectBOM(buffer).bomSize);
+  return { text: body.toString('utf16le'), encoding: 'utf-16le', hadInvalidBytes: false };
+}
+
+/** Decodifica UTF-16BE: Node no expone 'utf16be', se intercambian los pares. */
+function decodeUtf16Be(buffer: Buffer): { text: string; encoding: string; hadInvalidBytes: boolean } {
+  const body = buffer.subarray(detectBOM(buffer).bomSize);
+  const even = body.length % 2 === 1 ? body.subarray(0, body.length - 1) : body;
+  return { text: Buffer.from(even).swap16().toString('utf16le'), encoding: 'utf-16be', hadInvalidBytes: false };
+}
+
+/**
+ * @description Detecta UTF-16 **sin BOM** por el patron de bytes nulos.
+ *
+ * Es imprescindible comprobarlo antes de aceptar un decodificado UTF-8: un
+ * archivo UTF-16 de texto ASCII (p. ej. `48 00 6F 00`) **es** UTF-8 valido (los
+ * NUL lo son), asi que se colaba con NUL intercalados en lugar de decodificarse.
+ * El umbral (60% de los pares con NUL en la misma posicion) es conservador para
+ * no confundir un archivo de texto con NUL sueltos.
+ */
+function detectUtf16WithoutBom(buffer: Buffer): { text: string; encoding: string; hadInvalidBytes: boolean } | null {
+  if (buffer.length < 4 || buffer.length % 2 !== 0) return null;
+  const pairs = Math.floor(buffer.length / 2);
+  let oddNulls = 0;
+  let evenNulls = 0;
+  for (let i = 0; i + 1 < buffer.length; i += 2) {
+    if (buffer[i + 1] === 0x00) oddNulls++;
+    if (buffer[i] === 0x00) evenNulls++;
+  }
+  if (oddNulls > pairs * 0.6) return decodeUtf16Le(buffer);
+  if (evenNulls > pairs * 0.6) return decodeUtf16Be(buffer);
+  return null;
+}
+
 /**
  * Pipeline de fallback progresivo para decodificar un buffer:
+ *   0. UTF-16 (BOM explícito o patrón de NULs) → decodificar como UTF-16
  *   1. UTF-8 válido → decodificar normalmente
- *   2. UTF-8 con errores → TextDecoder({fatal: false}) → si <5% U+FFFD, aceptar
- *   3. >5% U+FFFD → detectar encoding real (UTF-16LE/BE, Latin1) y convertir
+ *   2. UTF-8 con errores → TextDecoder({fatal: false}) → si <50% U+FFFD, aceptar
+ *   3. >50% U+FFFD → detectar encoding real (UTF-16LE/BE, Latin1) y convertir
  *   4. Si nada funciona → lanzar EncodingError con sugerencia
  */
 function decodeWithFallback(buffer: Buffer): { text: string; encoding: string; hadInvalidBytes: boolean } {
-  // Paso 1: Verificar UTF-8 válido sin BOM
+  // Paso 0: UTF-16 explicito (BOM) o heuristico, antes del UTF-8.
+  const bom = detectBOM(buffer);
+  if (bom.encoding === 'utf-16le') return decodeUtf16Le(buffer);
+  if (bom.encoding === 'utf-16be') return decodeUtf16Be(buffer);
+
   const cleanBuffer = stripBOMFromBuffer(buffer);
+
+  // Paso 0b: UTF-16 sin BOM. Debe ir antes de cualquier decodificado UTF-8: un
+  // UTF-16 de texto ASCII es "UTF-8 valido", y uno con acentos entra por el
+  // camino de reemplazos (<50% de U+FFFD), que tambien lo acepta.
+  const asUtf16 = detectUtf16WithoutBom(cleanBuffer);
+  if (asUtf16) return asUtf16;
+
+  // Paso 1: Verificar UTF-8 válido sin BOM
   if (isValidUTF8(cleanBuffer)) {
     return { text: cleanBuffer.toString('utf-8'), encoding: 'utf-8', hadInvalidBytes: false };
   }
@@ -317,7 +369,9 @@ function decodeWithFallback(buffer: Buffer): { text: string; encoding: string; h
 
   if (detected.encoding === 'utf-16le') {
     try {
-      const text = Buffer.from(buffer).swap16().toString('utf-8');
+      // `swap16().toString('utf-8')` producia NUL intercalados ("Hola" ->
+      // "\u0000H\u0000o\u0000l\u0000a"). El encoding correcto de Node es 'utf16le'.
+      const text = buffer.toString('utf16le');
       // hadInvalidBytes=false porque el archivo es UTF-16LE válido, su encoding real
       return { text, encoding: 'utf-16le', hadInvalidBytes: false };
     } catch {
@@ -328,7 +382,8 @@ function decodeWithFallback(buffer: Buffer): { text: string; encoding: string; h
   if (detected.encoding === 'utf-16be') {
     try {
       const smallBuf = buffer.length % 2 === 1 ? buffer.subarray(0, buffer.length - 1) : buffer;
-      const text = Buffer.from(smallBuf).swap16().toString('utf-8');
+      // Node no expone 'utf16be': se intercambian los pares de bytes y se lee como LE.
+      const text = Buffer.from(smallBuf).swap16().toString('utf16le');
       // hadInvalidBytes=false porque el archivo es UTF-16BE válido, su encoding real
       return { text, encoding: 'utf-16be', hadInvalidBytes: false };
     } catch {
@@ -377,7 +432,7 @@ export function validateBuffer(buffer: Buffer): ValidationResult {
   }
 
   // Para detectar line ending, necesitamos decodificar
-  let lineEnding: ValidationResult['lineEnding'] = 'LF';
+  let lineEnding: ValidationResult['lineEnding'];
   try {
     const { text } = decodeWithFallback(buffer);
     lineEnding = detectLineEnding(text);
@@ -462,7 +517,9 @@ export function readFileSafe(filePath: string, options?: EncodingOptions): ReadR
     const stat = fs.statSync(filePath);
     const cached = readCache.get(cacheKey);
     if (cached && cached.mtimeMs >= stat.mtimeMs) {
-      return cached.result;
+      // Copia defensiva: el cache no debe exponer su objeto interno a quien
+      // podria mutarlo entre llamadas.
+      return { ...cached.result };
     }
   } catch {
     // Si no se puede stat, seguir sin cache
@@ -535,7 +592,9 @@ export async function readFileSafeAsync(filePath: string, options?: EncodingOpti
     const stat = await fsAsync.stat(filePath);
     const cached = readCache.get(cacheKey);
     if (cached && cached.mtimeMs >= stat.mtimeMs) {
-      return cached.result;
+      // Copia defensiva: el cache no debe exponer su objeto interno a quien
+      // podria mutarlo entre llamadas.
+      return { ...cached.result };
     }
   } catch {
     // Si no se puede stat, seguir sin cache
@@ -631,8 +690,8 @@ export function writeFileSafe(filePath: string, content: string, options?: Encod
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  // Escribir (NUNCA con BOM)
-  fs.writeFileSync(filePath, normalized, 'utf-8');
+  // Escribir de forma atomica (tmp unico + rename) y NUNCA con BOM
+  atomicWriteSync(filePath, normalized);
 
   // Invalidar cache de lectura para este archivo
   invalidateCache(filePath);
@@ -663,8 +722,8 @@ export async function writeFileSafeAsync(filePath: string, content: string, opti
   const dir = path.dirname(filePath);
   await fsAsync.mkdir(dir, { recursive: true });
 
-  // Escribir (NUNCA con BOM)
-  await fsAsync.writeFile(filePath, normalized, 'utf-8');
+  // Escribir de forma atomica (tmp unico + rename) y NUNCA con BOM
+  await atomicWrite(filePath, normalized);
 
   // Invalidar cache de lectura para este archivo
   invalidateCache(filePath);

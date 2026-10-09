@@ -1,112 +1,48 @@
-# BackendKit Agent - Complete Documentation Index
+# BackendKit Agent — índice de documentación
 
-Complete, modular documentation for the BackendKit Agent (bk-agent) — an AI coding assistant specialized in Node.js/NestJS backend development.
+> ⚠️ **Estado (2026-10-09): parte de esta documentación está desactualizada.**
+> Fue escrita para la implementación anterior, cuando el runtime de agentes vivía en
+> este repositorio. Hoy `bk-agent` es un CLI delgado sobre
+> `@backendkit-labs/agent-core` / `agent-coding`
+> ([ADR-002](../docs/adr/ADR-002-bk-agent-cli-delgado.md)), y el código de aquella
+> implementación está archivado en [`legacy/`](../legacy/README.md).
+> La fuente de verdad del estado actual es el
+> [informe de remediación](../docs/auditorias/remediacion-v1.0.0.md) y el
+> [README](../README.md).
 
-## 📚 Documentation Structure
+## Documentos vigentes
 
-### Getting Started
-1. **[01-overview.md](01-overview.md)** — What is bk-agent and its capabilities
-2. **[02-installation-setup.md](02-installation-setup.md)** — Installation, configuration, and first run
+| Documento | Para qué sirve |
+|---|---|
+| [README.md](../README.md) | Instalación, flags, herramientas, comandos y limitaciones reales |
+| [AGENT.md](../AGENT.md) | Instrucciones para agentes que trabajan en este repositorio |
+| [02-installation-setup.md](02-installation-setup.md) | Instalación y primer arranque |
+| [03-commands-slash.md](03-commands-slash.md) | Referencia de comandos slash |
+| [04-spec-driven-development.md](04-spec-driven-development.md) | Flujo `/spec.*` completo |
+| [07-workspace-management.md](07-workspace-management.md) | Workspaces multi-proyecto |
+| [09-memory-persistence.md](09-memory-persistence.md) | Memoria de proyecto y checkpoints |
+| [11-plugins-mcp.md](11-plugins-mcp.md) | Servidores MCP y modo headless |
+| [13-troubleshooting.md](13-troubleshooting.md) | Problemas comunes |
+| [14-architecture.md](14-architecture.md) | Arquitectura real (reescrito el 2026-10-09) |
 
-### Core Features
-3. **[03-commands-slash.md](03-commands-slash.md)** — All `/` slash commands reference
-4. **[04-spec-driven-development.md](04-spec-driven-development.md)** — Complete `/spec` workflow guide
-5. **[05-agents-specialization.md](05-agents-specialization.md)** — Agent selection and routing
-6. **[06-skills-system.md](06-skills-system.md)** — Extending capabilities with skills
-7. **[07-workspace-management.md](07-workspace-management.md)** — Multi-project workspace handling
+## Documentos desactualizados (revisar antes de usarlos)
 
-### Advanced Topics
-8. **[08-reflection-learning.md](08-reflection-learning.md)** — Reflection Engine and auto-learning
-9. **[09-memory-persistence.md](09-memory-persistence.md)** — Context memory and checkpoints
-10. **[10-backendkit-integration.md](10-backendkit-integration.md)** — BackendKit Labs libraries integration
-11. **[11-plugins-mcp.md](11-plugins-mcp.md)** — Creating plugins and MCP extensions
-12. **[12-advanced-config.md](12-advanced-config.md)** — Advanced configuration and tuning
+| Documento | Qué está mal |
+|---|---|
+| [01-overview.md](01-overview.md) | Atribuye al CLI el "Reflection Engine" y el orquestador propios: hoy los provee el framework y el CLI **no** los activa |
+| [05-agents-specialization.md](05-agents-specialization.md) | Los agentes y el routing los define el framework (10 perfiles builtin + los tuyos) |
+| [06-skills-system.md](06-skills-system.md) | Los skills se cargan de `~/.bk-agent/skills/global`, `…/packs` y `{proyecto}/.bk-agent/skills` (no del vault) |
+| [08-reflection-learning.md](08-reflection-learning.md) | El motor de reflexión propio quedó archivado en `legacy/`; su estado es el del framework |
+| [10-backendkit-integration.md](10-backendkit-integration.md) | Las librerías BackendKit **no** son dependencias de este repositorio |
+| [12-advanced-config.md](12-advanced-config.md) | Revisar: parte de la configuración la lee el framework (`~/.bk-agent/config.yaml`) |
+| [15-mcp-knowledge-service-strategy.md](15-mcp-knowledge-service-strategy.md) | Estrategia, no implementación |
+| [16-curator-codex-agent.md](16-curator-codex-agent.md) · [17](17-curator-codex-quick-reference.md) · [18](18-curator-codex-commands-reference.md) · [CURATOR-CODEX-COMMANDS.md](CURATOR-CODEX-COMMANDS.md) | Herramientas de curación de conocimiento, ajenas al CLI |
 
-### Knowledge & Curation
-13. **[16-curator-codex-agent.md](16-curator-codex-agent.md)** — Code curation and knowledge management (overview)
-14. **[17-curator-codex-quick-reference.md](17-curator-codex-quick-reference.md)** — Quick reference and workflow examples
-15. **[18-curator-codex-commands-reference.md](18-curator-codex-commands-reference.md)** — Commands quick reference (11 commands summary)
-16. **[CURATOR-CODEX-COMMANDS.md](CURATOR-CODEX-COMMANDS.md)** — Complete step-by-step guide with examples
+## Cómo se mantiene esta documentación
 
-### Reference
-17. **[13-troubleshooting.md](13-troubleshooting.md)** — Common issues and solutions
-18. **[14-architecture.md](14-architecture.md)** — Internal architecture and design
-19. **[15-mcp-knowledge-service-strategy.md](15-mcp-knowledge-service-strategy.md)** — MCP Knowledge Service architecture
-
----
-
-## 🎯 Quick Navigation
-
-### By Use Case
-
-**I want to...**
-- **Generate code** → Start with [04-spec-driven-development.md](04-spec-driven-development.md) → `/spec.prompt` → `/spec.run`
-- **Set up a new project** → Read [02-installation-setup.md](02-installation-setup.md) → `/init`
-- **Understand the agent** → Read [01-overview.md](01-overview.md) then [14-architecture.md](14-architecture.md)
-- **Configure for my team** → [12-advanced-config.md](12-advanced-config.md) + [11-plugins-mcp.md](11-plugins-mcp.md)
-- **Fix something** → [13-troubleshooting.md](13-troubleshooting.md)
-- **Build a custom skill** → [06-skills-system.md](06-skills-system.md)
-- **Understand workspace** → [07-workspace-management.md](07-workspace-management.md)
-- **Curate code knowledge** → [16-curator-codex-agent.md](16-curator-codex-agent.md) → [18-curator-codex-commands-reference.md](18-curator-codex-commands-reference.md) (quick) or [CURATOR-CODEX-COMMANDS.md](CURATOR-CODEX-COMMANDS.md) (detailed)
-- **Create a code vault** → [16-curator-codex-agent.md](16-curator-codex-agent.md) → `curator_workspace_add` → `curator_process_directory`
-- **Search code knowledge** → [16-curator-codex-agent.md](16-curator-codex-agent.md) → `knowledge_search`
-
-### By Role
-
-**Backend Developer**
-1. [02-installation-setup.md](02-installation-setup.md)
-2. [04-spec-driven-development.md](04-spec-driven-development.md)
-3. [10-backendkit-integration.md](10-backendkit-integration.md)
-4. [03-commands-slash.md](03-commands-slash.md)
-
-**Team Lead / Architect**
-1. [01-overview.md](01-overview.md)
-2. [14-architecture.md](14-architecture.md)
-3. [12-advanced-config.md](12-advanced-config.md)
-4. [08-reflection-learning.md](08-reflection-learning.md)
-
-**DevOps / Infrastructure**
-1. [02-installation-setup.md](02-installation-setup.md)
-2. [12-advanced-config.md](12-advanced-config.md)
-3. [11-plugins-mcp.md](11-plugins-mcp.md)
-
-**Plugin Developer**
-1. [06-skills-system.md](06-skills-system.md)
-2. [11-plugins-mcp.md](11-plugins-mcp.md)
-3. [14-architecture.md](14-architecture.md)
-
-**Knowledge Manager / Documentation**
-1. [16-curator-codex-agent.md](16-curator-codex-agent.md)
-2. [18-curator-codex-commands-reference.md](18-curator-codex-commands-reference.md) (quick reference)
-3. [CURATOR-CODEX-COMMANDS.md](CURATOR-CODEX-COMMANDS.md) (detailed guide)
-4. [15-mcp-knowledge-service-strategy.md](15-mcp-knowledge-service-strategy.md)
-
----
-
-## 🔗 External References
-
-- **BackendKit Labs**: https://github.com/backendkit-labs
-- **DeepSeek API**: https://api.deepseek.com
-- **GitHub Issues**: Report bugs and request features
-
----
-
-## 📅 Version Information
-
-- **Agent Version**: 1.0.0
-- **Documentation Last Updated**: June 2026
-- **Node.js Requirement**: >= 20
-
----
-
-## 💡 Tips for First-Time Users
-
-1. **Start small**: Begin with `/init` to analyze your project
-2. **Learn `/spec`**: The `/spec.*` workflow is the heart of bk-agent
-3. **Explore commands**: Run `/help` to see all available commands
-4. **Check status**: Use `/status` to understand the current state
-5. **Save progress**: Use `/checkpoint` to save your work
-
----
-
-**Ready to start?** → Go to [02-installation-setup.md](02-installation-setup.md)
+- Un documento no puede describir comandos que no existan: `npm run check:docs`
+  compara los comandos slash citados en `README.md`, `AGENT.md` y
+  `documentation/00-index.md` con los registrados en el código, y falla si hay
+  diferencias (se ejecuta en `npm run verify` y en CI).
+- Si una función del runtime no está activa en el CLI, se documenta como
+  **limitación conocida** (ver el README), no como capacidad.
