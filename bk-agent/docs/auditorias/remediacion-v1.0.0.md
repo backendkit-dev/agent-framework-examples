@@ -15,7 +15,7 @@ adr: "../adr/ADR-002-bk-agent-cli-delgado.md"
 |---|---|---|
 | Código vivo (`src/` + `bin/`) | 30.729 líneas / 139 archivos | **6.641 líneas** (`src/` 4.759 + `bin/cli.ts` 1.882) |
 | Módulos alcanzables desde el binario | 32 de 138 (76% muerto) | **24 de 24 (0% muerto)**, verificado en CI |
-| Código archivado | — | `legacy/`: 119 archivos / 20.623 líneas + 41 suites / 8.078 líneas |
+| Código eliminado | — | 119 módulos / 20.623 líneas + 41 suites / 8.078 líneas (archivados en `legacy/` durante la revisión y luego eliminados; recuperables de `59d1f02`) |
 | Suites de test | 48 (32 sobre código muerto) | **15 suites / 187 tests**, todas sobre el camino vivo |
 | Tiempo de suite | 43 s | **11 s** |
 | Cobertura *reportada* | 58% (medía código muerto) | **20,23%** (medición real, ver N-1) |
@@ -40,9 +40,9 @@ Verificado en esta sesión, todo en verde.
 
 | ID | Hallazgo | Qué se hizo |
 |---|---|---|
-| C-1 | 76% de código inalcanzable | Archivado en `legacy/` (ADR-002) + guard `scripts/check-reachability.mjs` que falla si vuelve a pasar |
+| C-1 | 76% de código inalcanzable | Eliminado del árbol tras verificarlo contra git (ADR-002) + guard `scripts/check-reachability.mjs` que falla si vuelve a pasar |
 | C-2 | `--headless` auto-aprobaba todo | `--auto-approve` explícito y visible; sin él, headless **deniega** mutaciones (aviso por evento) |
-| C-3 | Docs/tests describían otro producto | `src/index.ts` exporta solo la superficie viva; `legacy/README.md`; ADR-002; este informe |
+| C-3 | Docs/tests describían otro producto | `src/index.ts` exporta solo la superficie viva; ADR-002; guard `check-docs`; este informe |
 | A-5 | `allowAll` pegajoso anulaba las reglas "preguntar siempre" | `decideApproval`/`decisionFromUserAnswer` no cubren `npm/pip install` con el permiso global |
 | A-10 | Inyección ANSI/OSC 52 desde el modelo | `stripTerminalEscapes`/`sanitizeSingleLine` aplicados en `formatMarkdown`, tool results, footer y spinner |
 | A-11 | UI O(n²) en streaming | El label del spinner se calcula incremental (buffer de 512 chars), no re-dividiendo todo |
@@ -60,7 +60,7 @@ Verificado en esta sesión, todo en verde.
 | A-2 | `read_file` sin guard de rutas sensibles | **Cerrado en el binario**: `.env`, claves privadas, `credentials.json`… requieren aprobación (denegado en headless salvo `--auto-approve`) |
 | M-3 | `readCache` sin límite y UTF-16 mal decodificado | **Cerrado**: cache LRU acotado (200 entradas, `src/shared/utils/lru-cache.ts`) + copia defensiva del resultado; `decodeWithFallback` detecta UTF-16 (BOM o patrón de NULs) **antes** del UTF-8 y decodifica con `utf16le` |
 | M-7 | Tools MCP y de estado del framework sin aprobación | **Cerrado** con `src/security/apply-extra-approvals.ts`: se envuelve `approvalGate.check` (paso obligado de toda tool call). Las tools MCP piden aprobación salvo `readOnlyHint`, y las de estado (`save_context`, `save_learning`, `save_audit`, `save_user_preference`, `update_session`) siempre. Respeta el modo `auto` y es fail-closed en headless |
-| B-1/B-3 | Duplicación y bugs de reemplazo | Se fueron con el archivado de `legacy/` |
+| B-1/B-3 | Duplicación y bugs de reemplazo | Desaparecieron al eliminar el runtime duplicado |
 
 ## 3. Hallazgos nuevos, descubiertos al remediar
 
@@ -94,7 +94,7 @@ pinta si el consumidor informa el estado.
 **N-6 (bajo) — `src/config/seed-config.ts` tenía mojibake irreversible.**
 Además del BOM y de los bytes UTF-8 inválidos, su contenido tenía
 `configuraci+¦n`, `pol+¡ticas`, `ÔåÆ`: una corrupción previa que no se puede revertir
-mecánicamente (se archivó en `legacy/`). Los bytes inválidos del test sí se repararon
+mecánicamente (se eliminó con el resto del runtime muerto). Los bytes inválidos del test sí se repararon
 (`confirmación`, `éxito`).
 
 **N-7 (bajo) — El filtro de `<recap>` descartaba texto.** En el modo headless, todo lo
@@ -189,8 +189,9 @@ DEEPSEEK_API_KEY=sk-x bash -c 'echo "{\"type\":\"user_input\",\"text\":\"/tokens
 
 ## 6. Cómo revertir
 
-- Los 160 archivos movidos están en el historial de git: `git checkout HEAD -- bk-agent/src bk-agent/tests`
-  restaura el árbol anterior (y `git rm -r legacy/` descarta el archivo).
+- Los 160 archivos del runtime anterior están en el historial: `git show 59d1f02:bk-agent/src/agent/loop.ts`
+  (o `git checkout 59d1f02 -- bk-agent/src bk-agent/tests` para restaurarlos todos).
+- El trabajo está en dos commits: `df55842` (remediación) y `cb90603` (limpieza de artefactos).
 - Los cambios de `bin/cli.ts`, `formatters.ts`, `encoding.ts`, `jest.config.js` y
   `package.json` están en `git diff` (13 archivos modificados).
 - Las dos decisiones de producto tomadas aquí están documentadas y son reversibles:
@@ -205,8 +206,7 @@ DEEPSEEK_API_KEY=sk-x bash -c 'echo "{\"type\":\"user_input\",\"text\":\"/tokens
 2. **PR upstream** con los cuatro puntos de §4: el importante es N-8 (aceptar
    `tools`/`extraTools`), que permite retirar la sustitución temporal y aplica también a
    M-7.
-3. **Podar `legacy/`** cuando el equipo confirme que no piensa reutilizar nada
-   (`git rm -r legacy/`): −20.623 líneas.
+3. **Podar `legacy/`**: hecho en `cb90603` (−20.623 líneas).
 4. **Docs**: `README.md`, `AGENT.md`, `documentation/00-index.md` y
    `documentation/14-architecture.md` ya están alineados contra el binario; el resto del
    árbol (`documentation/01..13`, `15..18`, curator) queda **marcado como desactualizado

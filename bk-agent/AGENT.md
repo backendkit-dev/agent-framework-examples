@@ -19,13 +19,13 @@ proyecto y las utilidades locales. Ver [ADR-002](docs/adr/ADR-002-bk-agent-cli-d
 | `src/skills/loader.ts` | Carga de skills YAML |
 | `src/commands/slash-registry.ts` | Registro de comandos |
 | `tests/` | 10 suites / 129 tests del camino vivo |
-| `legacy/` | Implementación previa al framework, **archivada**: no se compila, no se testea, no se toca |
+| historial de git | La implementación previa al framework se archivó y luego se eliminó del árbol (commit `cb90603`); recuperable con `git show 59d1f02:bk-agent/src/...` |
 | `docs/` | ADRs e informes de auditoría/remediación (fuente de verdad del estado del proyecto) |
 
 ## Reglas del repositorio (obligatorias)
 
 1. **Nada inalcanzable en `src/`**: todo módulo debe ser alcanzable desde `bin/cli.ts` o
-   `src/index.ts`. Lo que deja de usarse se archiva en `legacy/`, no se deja suelto.
+   `src/index.ts`. Lo que deja de usarse se elimina (queda en el historial de git), no se deja suelto.
    Verificación: `npm run check:reachability`.
 2. **UTF-8 sin BOM** en todos los archivos. Verificación: `npm run lint:utf8`.
 3. **Cero errores de ESLint** (`npm run lint`) y **typecheck de app y tests**
@@ -77,7 +77,8 @@ dependencias de este repositorio salvo `console-animations`):
 
 - Los informes de `docs/auditorias/` son la fuente de verdad del estado: leé el de
   remediación antes de proponer cambios grandes.
-- `legacy/` es solo referencia histórica: si necesitás algo de ahí, arreglá sus imports
-  y traelo con tests, o subilo al framework.
+- El runtime anterior no está en el árbol: si necesitás una pieza, recuperala del
+  historial (`git show 59d1f02:bk-agent/src/...`), arreglá sus imports y traela con tests,
+  o subila al framework.
 - No agregues documentación que describa funciones que el binario no tiene: es
   exactamente el problema que motivó la auditoría.

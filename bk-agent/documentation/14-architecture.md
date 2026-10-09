@@ -10,8 +10,8 @@
 **`bk-agent` es un CLI.** El runtime de agentes no vive en este repositorio: se consume
 de `@backendkit-labs/agent-core` (motor, orquestador, memoria, aprobaciones, MCP) y
 `@backendkit-labs/agent-coding` (perfiles de agentes, tools de código, skills builtin).
-Todo lo que era una implementación propia de ese runtime está archivado en `legacy/` y
-**no forma parte del producto**.
+Todo lo que era una implementación propia de ese runtime se eliminó del árbol (está en el
+historial de git, commit `59d1f02`) y **no forma parte del producto**.
 
 ## Capas
 

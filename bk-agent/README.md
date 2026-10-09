@@ -167,7 +167,7 @@ npm run dev             # TUI desde el código fuente (tsx)
 Reglas del repositorio:
 
 - **`src/` no puede tener código inalcanzable** desde `bin/cli.ts` o `src/index.ts`
-  (`npm run check:reachability`); lo que ya no se usa se archiva en `legacy/`.
+  (`npm run check:reachability`); lo que ya no se usa se elimina (queda en el historial de git).
 - Todo archivo debe ser **UTF-8 sin BOM** (`npm run lint:utf8`).
 - **ESLint** obligatorio (`npm run lint`).
 

@@ -38,12 +38,14 @@ Consecuencias medidas de mantener las dos copias:
    locales (encoding, saneado de terminal, política de aprobación). El runtime de
    agentes se consume de `@backendkit-labs/agent-core` / `agent-coding` y **no se
    reimplementa aquí**.
-2. La implementación previa se **archiva en `legacy/`** (no se borra), excluida de
-   build, tests, cobertura y lint. Ver [`legacy/README.md`](../../legacy/README.md).
+2. La implementación previa se **archiva primero** (en `legacy/`, fuera de build, tests,
+   cobertura y lint) para poder revisarla, y **se elimina del árbol** una vez verificado que
+   todo su contenido está en git: los 160 archivos existen en `59d1f02` (117 idénticos byte a
+   byte). Recuperación: `git show 59d1f02:bk-agent/src/agent/loop.ts`.
 3. La superficie pública del paquete (`src/index.ts`) exporta **solo** lo que este
    repositorio mantiene y testea. `AgentLoop` y `AgentClient` dejan de exportarse
-   (quedan en `legacy/`).
-4. Cualquier pieza del `legacy/` que se quiera conservar se **sube al framework**
+   (se eliminaron del árbol; están en el historial).
+4. Cualquier pieza del runtime anterior que se quiera conservar se **sube al framework**
    con sus tests; no se revive como copia local.
 5. Regla de arquitectura verificable: **ningún archivo de `src/` puede quedar
    inalcanzable** desde `bin/cli.ts` o `src/index.ts`. Se verifica en CI con
@@ -74,7 +76,7 @@ Condiciones de esta medida, que la hacen aceptable como temporal:
 | Acción | Estado |
 |---|---|
 | Decisión documentada (este ADR) | ✅ |
-| `legacy/` archivado (119 módulos + 41 suites) | ✅ |
+| Runtime anterior: archivado (119 módulos + 41 suites) y luego eliminado del árbol | ✅ commit `cb90603` |
 | `bin/cli.ts` sin imports del runtime muerto | ✅ |
 | Cobertura incluye `bin/**` y umbral de ratchet | ✅ |
 | Guard de encoding real (`check-utf8.js`) + 45 archivos normalizados | ✅ |
@@ -89,7 +91,7 @@ Condiciones de esta medida, que la hacen aceptable como temporal:
 | CI en el repo raíz | ✅ `.github/workflows/bk-agent-ci.yml` |
 | Documentación alineada (README, AGENT.md, índice, arquitectura) | ✅ con guard `check:docs` (comandos y enlaces) |
 | Empaquetado (solo lo que el binario usa) | ✅ `files` + `clean` antes de compilar (579 → 103 archivos) |
-| Podar `legacy/` definitivamente | ⏳ decisión del equipo (`git rm -r legacy/`) |
+| Trabajo commiteado (scoped a `bk-agent/` + `.github/`) | ✅ commits `df55842` y `cb90603` |
 
 ## Consecuencias
 
@@ -98,6 +100,6 @@ Condiciones de esta medida, que la hacen aceptable como temporal:
   los tests corren en 8 s en vez de 43 s.
 - **Negativas:** se pierden (quedan archivados) los tests de los módulos
   archivados; hay que coordinar con el framework los tres arreglos marcados como
-  `upstream`; `legacy/` sigue ocupando espacio en el árbol hasta que se borre.
-- **Riesgo asumido:** si alguien necesita una pieza del `legacy/`, debe arreglar
-  sus imports antes de usarla (no compila tal cual). Está documentado.
+  `upstream`.
+- **Riesgo asumido:** si alguien necesita una pieza del runtime anterior, debe recuperarla
+  del historial y arreglar sus imports antes de usarla (no compila tal cual). Está documentado.

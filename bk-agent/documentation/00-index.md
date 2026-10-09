@@ -5,7 +5,7 @@
 > este repositorio. Hoy `bk-agent` es un CLI delgado sobre
 > `@backendkit-labs/agent-core` / `agent-coding`
 > ([ADR-002](../docs/adr/ADR-002-bk-agent-cli-delgado.md)), y el código de aquella
-> implementación está archivado en [`legacy/`](../legacy/README.md).
+> implementación se eliminó del árbol (recuperable del historial de git, commit `59d1f02`).
 > La fuente de verdad del estado actual es el
 > [informe de remediación](../docs/auditorias/remediacion-v1.0.0.md) y el
 > [README](../README.md).
@@ -32,7 +32,7 @@
 | [01-overview.md](01-overview.md) | Atribuye al CLI el "Reflection Engine" y el orquestador propios: hoy los provee el framework y el CLI **no** los activa |
 | [05-agents-specialization.md](05-agents-specialization.md) | Los agentes y el routing los define el framework (10 perfiles builtin + los tuyos) |
 | [06-skills-system.md](06-skills-system.md) | Los skills se cargan de `~/.bk-agent/skills/global`, `…/packs` y `{proyecto}/.bk-agent/skills` (no del vault) |
-| [08-reflection-learning.md](08-reflection-learning.md) | El motor de reflexión propio quedó archivado en `legacy/`; su estado es el del framework |
+| [08-reflection-learning.md](08-reflection-learning.md) | El motor de reflexión propio se eliminó del repositorio; su estado es el del framework |
 | [10-backendkit-integration.md](10-backendkit-integration.md) | Las librerías BackendKit **no** son dependencias de este repositorio |
 | [12-advanced-config.md](12-advanced-config.md) | Revisar: parte de la configuración la lee el framework (`~/.bk-agent/config.yaml`) |
 | [15-mcp-knowledge-service-strategy.md](15-mcp-knowledge-service-strategy.md) | Estrategia, no implementación |
