@@ -6,7 +6,9 @@
   "scripts": {
     "release": "tsx src/release-run.ts",
     "smoke": "tsx src/release-smoke.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "agent:smoke": "tsx src/captain-smoke.ts",
+    "agent:live": "tsx src/captain-live.ts"
   },
   "dependencies": {
     "semver": "^7.6.0",

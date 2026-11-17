@@ -20,6 +20,31 @@ build-core ─> build-util ─> build-web ─> build-cli        ├─> plan ─
 build-solo ─────────────────────────────────────────────────────────  blocked ──> report skipped
 ```
 
+## The agent: `captain`
+
+The flow above is an app: no model. On top of it there is an **agent**: a model (DeepSeek, or an offline stand-in) that you ask *"can I publish alpha and beta?"* and that decides what to do with the same flows as tools.
+
+```bash
+npm run agent:smoke    # 6 checks, ~1.5 min, offline: a deterministic model drives real flows over small monorepos
+export DEEPSEEK_API_KEY=...; npm run agent:live     # a real model, two monorepos (one with a failing build), spend cap 0.10 USD
+npm run agent:live -- --repo ../../agent-framework "Can I publish?"   # a real monorepo (minutes: real npm builds)
+```
+
+What a real model did on `agent:live` (6 model calls, ~0.008 USD, 16 s): `flow_list`, started **both** runs before waiting (multitasking), waited with `flow_wait`, read both with `run_report`, and answered: alpha is sound and waits for a person (run id and approval id), beta failed at `build-util` with its compiler error, which skipped what depends on it, and what to do next.
+
+| The agent | Framework piece |
+|---|---|
+| The flows are its tools; several runs at once, one cap of builds across all of them | `createFlowHandler`, `createFlowTools`, `KeyedConcurrencyLimiter` shared by the runs |
+| It waits for a run in one call, not by polling | `flow_wait` (added to the framework for this example) |
+| It **cannot approve** the report: the policy denies it, and the tool decides as a `service`, which a `human` approval refuses | `ToolPolicy`, `createApprovalHandler`, `accepts: ['human']` |
+| It cannot cancel a run unless a person confirms | `destructive` + `policy` + `approver` of the engine |
+| The run waits for a person as `awaiting_approval` (not failed), with the same id for the model, the journal and the approval; after the decision it goes on without rebuilding | `flowFromDefinition` + `FlowHost` with a gate (added to the framework for this example), `NdjsonRunJournal` |
+| Several tool calls of one turn run together | `maxParallelTools` + read-only tools |
+
+Two things the example needed were missing in the framework and went in as PRs, not as workarounds here: `flow_wait` (#218) and flows with a human gate hosted in `FlowHost` (#219; before, such a run ended `failed` and its approval id was unknowable). Until they are released the example uses the framework from source.
+
+Limits: the host reads the packages once, when it is created (a package added later needs a new host); the stand-in model checks the plumbing, only `agent:live` says anything about a model.
+
 ## Run it
 
 ```bash
