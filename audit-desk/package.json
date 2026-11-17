@@ -1,0 +1,26 @@
+{
+  "name": "audit-desk-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An exhaustive audit of expense records as a durable flow: shards scanned in parallel on workers, a consolidation, an independent verification and a report a person approves. A test bench for the flow engine, the BullMQ queue and the Redis journal of @backendkit-labs/agent-core.",
+  "scripts": {
+    "smoke": "tsx src/audit-smoke.ts",
+    "audit": "tsx src/audit-run.ts",
+    "redis:up": "docker compose up -d --wait",
+    "redis:down": "docker compose down",
+    "redis:check": "tsx src/redis-check.ts",
+    "typecheck": "tsc --noEmit",
+    "ndjson:check": "tsx src/ndjson-check.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
