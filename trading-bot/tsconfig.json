@@ -1,0 +1,45 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "5.0",
+    "lib": [
+      "ES2022"
+    ],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "noEmit": true,
+    "types": [
+      "node"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@backendkit-labs/agent-core": [
+        "../../agent-framework/packages/core/src/index.ts"
+      ],
+      "@backendkit-labs/agent-providers": [
+        "../../agent-framework/packages/providers/src/index.ts"
+      ],
+      "@backendkit-labs/agent-testkit": [
+        "../../agent-framework/packages/testkit/src/index.ts"
+      ],
+      "zod": [
+        "../../agent-framework/node_modules/zod"
+      ],
+      "@backendkit-labs/agent-flow-queue": [
+        "../../agent-framework/packages/flow-queue/src/index.ts"
+      ],
+      "bullmq": [
+        "../../agent-framework/node_modules/bullmq"
+      ],
+      "ioredis": [
+        "../../agent-framework/node_modules/ioredis"
+      ]
+    }
+  },
+  "include": [
+    "src"
+  ]
+}

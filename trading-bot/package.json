@@ -1,0 +1,27 @@
+{
+  "name": "trading-bot-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Paper-trading bot: an LLM reasons, deterministic tools act, and the framework's memory and learning make it improve from its own losing trades. A test bench for @backendkit-labs/agent-core.",
+  "scripts": {
+    "smoke": "tsx src/smoke.ts",
+    "sim": "tsx src/sim.ts",
+    "tune": "tsx src/tune.ts",
+    "live": "tsx src/live.ts",
+    "typecheck": "tsc --noEmit",
+    "desk": "tsx src/desk-sim.ts",
+    "desk:smoke": "tsx src/desk-smoke.ts",
+    "desk:live": "tsx src/desk-live.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
