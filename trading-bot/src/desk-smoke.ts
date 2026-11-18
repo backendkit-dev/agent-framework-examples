@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-    createApprovalHandler, FileRunJournal, KeyedConcurrencyLimiter, MemoryApprovalStore, MemoryRunJournal, planFlow, runFlow, stepApprovalId,
+    createApprovalHandler, NdjsonRunJournal, KeyedConcurrencyLimiter, MemoryApprovalStore, MemoryRunJournal, planFlow, runFlow, stepApprovalId,
     type FlowResult, type LLMMessage,
 } from '@backendkit-labs/agent-core';
 import { Market } from './market';
@@ -140,9 +140,11 @@ async function main(): Promise<void> {
     });
 
     await check('the process dies in the middle of the decision: another process resumes and does not repeat the analysts', async () => {
-        const dir = mkdtempSync(join(tmpdir(), 'desk-crash-'));
-        try {
-            const w = world(); const journal = new FileRunJournal(dir);
+        // A claim that expires by TTL stands in for the process that died: both runs live in this process, and the ndjson journal frees a claim
+        // when the pid of its holder is gone (it ignores the TTL), so a pid that is still alive here would never be taken over. The real kill is
+        // tested with separate processes (agent-core, audit-desk).
+        {
+            const w = world(); const journal = new MemoryRunJournal();
             const dying = desk(w, { hangAgents: new Set(['decider']) });
             // The first process: it never finishes the decision, and it does not renew its claim (as a process that died does not).
             void runFlow(entryFlow('AAA-SIM'), { executor: dying, journal, owner: 'process-1', claimTtlMs: 50, claimRenewMs: 0, runId: 'crash-1', payload: { symbol: 'AAA-SIM', bar: 120 }, approve: async () => true }).catch(() => undefined);
@@ -154,7 +156,7 @@ async function main(): Promise<void> {
             for (const s of ['technical', 'regime', 'exposure']) assert.equal(trace(second, s).length, 0, `${s} ran again after the crash`);
             assert.equal(trace(second, 'decision').length, 1, 'the interrupted step runs again (at least once)');
             assert.equal((await journal.get('crash-1'))?.status, 'done');
-        } finally { rmSync(dir, { recursive: true, force: true }); }
+        }
     });
 
     await check('a SKIP never reaches a person: the order step is skipped by its condition and nobody is asked', async () => {

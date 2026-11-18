@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createApprovalHandler, FileRunJournal, MemoryApprovalStore, runFlow, stepApprovalId, type StepExecutor } from '@backendkit-labs/agent-core';
+import { createApprovalHandler, NdjsonRunJournal, MemoryApprovalStore, runFlow, stepApprovalId, type StepExecutor } from '@backendkit-labs/agent-core';
 import { runAudit } from './audit-run';
 import { auditFlow } from './audit-flow';
 import { AuditExecutor, dataFor } from './audit-executor';
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
         try {
             const data = dataFor(7, 2400); const runs: string[] = [];
             const inner = new AuditExecutor({ data, shardSize: 100, onRun: s => { runs.push(s.id); } });
-            const store = new MemoryApprovalStore(); const journal = new FileRunJournal(dir);
+            const store = new MemoryApprovalStore(); const journal = new NdjsonRunJournal(dir);
             const opts = { journal, approvals: { store }, runId: 'audit-2026', payload: { audit: 'x' }, executor: inner };
             const flow = auditFlow(Math.ceil(data.records.length / 100));
             const first = await runFlow(flow, opts);
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
     });
 
     await check('a person can refuse the report: the run ends rejected', async () => {
-        const data = dataFor(7, 2400); const store = new MemoryApprovalStore(); const journal = new FileRunJournal(mkdtempSync(join(tmpdir(), 'audit-')));
+        const data = dataFor(7, 2400); const store = new MemoryApprovalStore(); const journal = new NdjsonRunJournal(mkdtempSync(join(tmpdir(), 'audit-')));
         const opts = { journal, approvals: { store }, runId: 'refused', payload: { audit: 'x' }, executor: new AuditExecutor({ data, shardSize: 100 }) };
         const flow = auditFlow(Math.ceil(data.records.length / 100));
         await runFlow(flow, opts);

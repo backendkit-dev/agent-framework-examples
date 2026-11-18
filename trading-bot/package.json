@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "desk": "tsx src/desk-sim.ts",
     "desk:smoke": "tsx src/desk-smoke.ts",
-    "desk:live": "tsx src/desk-live.ts"
+    "desk:live": "tsx src/desk-live.ts",
+    "evals": "tsx src/evals.ts"
   },
   "dependencies": {
     "zod": "^4.6.6"

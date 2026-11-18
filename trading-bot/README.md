@@ -64,7 +64,7 @@ for each symbol, at the same time:
 | Five agents, each with its own prompt and only its own tools | `desk-agents.ts` | `StepExecutor`, `createBaseEngine` |
 | Offline models that read their ROLE | `desk-mock-llm.ts` | |
 | One flow per symbol at once, a cap per agent, a simulated person approving | `desk-sim.ts` | `KeyedConcurrencyLimiter`, `approve` |
-| The checks | `desk-smoke.ts` | `MemoryRunJournal`, `FileRunJournal`, `createApprovalHandler`, `planFlow` |
+| The checks | `desk-smoke.ts` | `MemoryRunJournal`, `NdjsonRunJournal`, `createApprovalHandler`, `planFlow` |
 | A real model in every agent (and optionally the queue and Redis) | `desk-live.ts` | `agent-flow-queue` |
 
 ```bash

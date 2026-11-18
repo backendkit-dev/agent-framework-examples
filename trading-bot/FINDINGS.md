@@ -98,5 +98,8 @@ The decider answers `SKIP` most of the time, but `execute` is a step with `gate.
 ### 9. The result carries no cost — FIXED (unpublished)
 `StepOutput.costUsd` is optional and `FlowResult` does not total it, so the cost of a flow is whatever the executor kept (the bench wraps the provider and sums the tokens). **Fixed:** `FlowResult.costUsd` is the sum of the steps' `costUsd` (absent when none reported).
 
+### 10. The evaluation harness fits a simulation only through an adapter — MEASURED
+`npm run evals` runs the bench with the harness of `agent-testkit` (SPEC-0021): a bot that asks for 40% of the equity passes 0 of 4 runs without learning and 3 of 4 with it. The suite runs one `engine.run` per run, and a simulation is an episode (one engine over hundreds of bars), so each run here wraps a whole simulation as an object with `run` that returns what happened as a `RunResult`. It works with no change in the harness, but the graders see the aggregate, not a bar. An episode as a first-class case does not exist; see SPEC-0021 §9.
+
 ### Not tried
 `desk:live` with `REDIS_URL` (the BullMQ `QueueStepExecutor` and the `RedisRunJournal` Lua scripts) type-checks but **was not run: there is no Redis on this machine**. It is the first thing to try when there is one.
